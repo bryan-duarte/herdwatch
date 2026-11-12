@@ -1,8 +1,14 @@
 # Herdwatch - SSH server monitor for coding agents
 
-Your coding agents run on remote servers, and from Herdr you cannot see when a host runs out of RAM or disk, which agent waits for you, or what still holds a port. Herdwatch is an SSH system and resource monitor for every server, VPS and homelab, like btop or htop in a side panel: CPU, memory, GPU, Docker containers, ports, git worktrees and Claude Code or Codex agents. Kill a process, open a remote port, get an alert, prune Docker or delete old worktrees. Nothing to install on the server.
+Your coding agents run on remote servers, and from Herdr you cannot see when a host runs out of RAM or disk, which agent waits for you, or which dev server still holds a port. Herdwatch is an SSH system monitor for every server, VPS and homelab, a resource monitor like btop or htop in a side panel: CPU, memory, GPU, processes, Docker containers, ports, git worktrees and your Claude Code or Codex agents, with alerts and a kill button.
 
 ![Herdwatch - SSH server monitor for coding agents](preview.png)
+
+**Watch.** A pill in the tab row shows the CPU and memory of each host. One click opens the console: history charts, every agent with its state and the CPU and memory of its process tree, listening ports, worktree sizes, Docker and the top 30 processes.
+
+**Act.** Kill a process tree, pin a port and get an alert when it stops, open a remote port in your browser, delete merged worktrees, and stop or prune Docker. Each action shows what it touches and asks first.
+
+**Know why.** When a host fails, Herdwatch says why and what to do next. It uses only `ssh` and the tools that are already on the host: nothing to install.
 
 ## What you see
 

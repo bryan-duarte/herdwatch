@@ -4,11 +4,11 @@
 
 Your coding agents run on remote machines. From Herdr you cannot see if a host is out of memory, which agent waits for you, which dev server still holds a port, how much disk the old worktrees take, or what Docker keeps on the disk.
 
-Herdwatch shows all of this for every SSH host, in one console inside [Herdr](https://herdr.dev). A pill in the tab row gives the CPU and memory of each host at a glance.
+**Watch.** Herdwatch shows all of this for every SSH host, in one console inside [Herdr](https://herdr.dev). A pill in the tab row gives the CPU and memory of each host at a glance.
 
-You can also act from the console: kill a process tree, pin a port and get an alert when it stops, open a remote port in your browser, delete a merged worktree, and stop, remove or prune Docker. Every action asks first. When a host fails, Herdwatch tells you why and what to do.
+**Act.** Kill a process tree, pin a port and get an alert when it stops, open a remote port in your browser, delete a merged worktree, and stop, remove or prune Docker. Every action asks first.
 
-Your hosts need no daemon and no install. Herdwatch uses `ssh` and the tools that are already there.
+**Know why.** When a host fails, Herdwatch tells you why and what to do. Your hosts need no daemon and no install: Herdwatch uses `ssh` and the tools that are already there.
 
 It is a Herdr.app mod: JavaScript for the panel, Bash and POSIX `sh` for the polling.
 
@@ -57,26 +57,47 @@ To watch the Mac or Linux box Herdr runs on, add `localhost`. This needs a runni
 
 ## What you get
 
-![The pill in the tab row](assets/cover-pill.png)
+The pictures below use sample hosts and numbers.
 
-**The pill.** On the first install, Herdr docks it as a thin strip at the top of the window. It shows each host's CPU and memory, each with its icon and a 4-cell meter, with `!` at 70% and `!!` at 90%. Click it, or press `cmd-shift-m`, to open the console beside your terminal. The focus stays in your terminal. To put the pill in the tab row, see [Layout](#put-the-pill-in-the-tab-row).
+### The pill
 
-![Many hosts](assets/cover-fleet.png)
+![The pill: CPU and memory of each host, and a host that is down](assets/view-pill.png)
 
-**The console.** It has one tab per host and six views:
+The compact view. On the first install, Herdr docks it as a thin strip at the top of the window. It shows each host's CPU and memory, each with its icon and a 4-cell meter, with `!` at 70% and `!!` at 90%. A down host shows `✕`, and a `!` after the hosts means the last poll failed (hover it to read why). Click the pill, or press `cmd-shift-m`, to open the console beside your terminal. The focus stays in your terminal. To put the pill in the tab row, see [Layout](#put-the-pill-in-the-tab-row).
 
-| View | What it shows |
-| --- | --- |
-| `overview` | CPU and memory history charts with agent start and finish markers, per-core load, disk use and I/O, network rates, GPU (NVIDIA), uptime |
-| `agents` | Each coding agent session on the host: app, state (`working`, `needs you`, `idle`, `done`), repository, branch, and the CPU and memory of the agent's whole process tree, uptime |
-| `ports` | Listening TCP ports, and the agent that started each one (found through the parent processes). Pinned ports stay on top, and show `down` when they stop |
-| `worktrees` | Every git worktree with its size, uncommitted files, ahead/behind and age, with filters for stale, merged, uncommitted, agent running and behind. The tooltip gives the created date and the last git activity |
-| `docker` | Containers with their state and size, images and volumes, and the space that a prune frees |
-| `procs` | The top 30 processes by CPU or memory; agent processes are marked, and common programs (Node.js, Python, PostgreSQL, Redis, nginx and others) show their logo |
+### The console
 
-Keys in the console (click it first): `c` and `m` sort by CPU or memory, `1` to `4` choose a host. The range control switches the charts between 2, 5 and 10 minutes. Hover a host tab to see the SSH round-trip time.
+It has one tab per host and six views. Keys (click the console first): `c` and `m` sort by CPU or memory, `1` to `4` choose a host. The range control switches the charts between 2, 5 and 10 minutes. Hover a host tab to see the SSH round-trip time.
 
-**Actions.** Each action opens a dialog that says what it touches, and does nothing until you confirm (`Enter`) or cancel (`Esc`).
+**overview.** Per-core load, CPU and memory history charts with agent start and finish markers, disk use and I/O, network rates, GPU (NVIDIA), the worktree total and the agents on the host.
+
+![The overview view](assets/view-overview.png)
+
+**agents.** Each coding agent session: app, state (`working`, `needs you`, `idle`, `done`), repository and branch, a CPU sparkline, and the CPU and memory of the agent's whole process tree. The title names the agent that uses the most.
+
+![The agents view](assets/view-agents.png)
+
+**ports.** Listening TCP ports, and the agent that started each one (found through the parent processes). Pinned ports stay on top and show `down` when they stop. `open` forwards the port to your browser.
+
+![The ports view](assets/view-ports.png)
+
+**worktrees.** Every git worktree with its size, uncommitted files and age, with filters for stale, merged, uncommitted, agent running and behind. A `merged` tag marks the ones you are done with. The tooltip gives the created date and the last git activity.
+
+![The worktrees view](assets/view-worktrees.png)
+
+**docker.** Containers with their state and size, the images and volumes, and the space that a prune frees.
+
+![The docker view](assets/view-docker.png)
+
+**procs.** The top 30 processes by CPU or memory. Agent processes are marked, and common programs (Node.js, Python, PostgreSQL, Redis, nginx, Docker and others) show their logo.
+
+![The procs view](assets/view-procs.png)
+
+### Actions
+
+Each action opens a dialog that says what it touches, and does nothing until you confirm (`Enter`) or cancel (`Esc`).
+
+![The kill, remove worktree and prune dialogs](assets/view-dialogs.png)
 
 | Where | Button | What it does |
 | --- | --- | --- |
@@ -89,11 +110,15 @@ Keys in the console (click it first): `c` and `m` sort by CPU or memory, `1` to 
 
 Herdwatch checks each action again on the host right before it runs, and it never touches the main checkout of a repository. The same actions work from a terminal: `bin/herdwatch action {pin|unpin|kill|worktree-remove|docker-stop|docker-rm|docker-prune} <label> [args]`.
 
-**Clear errors.** A host that fails shows the reason and the next step, for example `The name devbox.lan does not resolve. Check the target of devbox in hosts.conf.` A bad line in a config file shows the file, the line and the value that Herdwatch uses instead.
+### Clear errors
 
-![Worktree storage](assets/cover-disk-hunter.png)
+A host that fails shows the reason and the next step, for example `The name devbox.lan does not resolve. Check the target of devbox in hosts.conf.` A bad line in a config file shows the file, the line and the value that Herdwatch uses instead.
 
-**Worktree storage.** Every 5 minutes, Herdwatch finds the git linked worktrees under your home folder on each host and measures them with `du`. It reads git's own records, so it finds worktrees from any tool. The label comes from the folder:
+![A host that is down, with its reason, and the host notes](assets/view-errors.png)
+
+### Worktree storage
+
+Every 5 minutes, Herdwatch finds the git linked worktrees under your home folder on each host and measures them with `du`. It reads git's own records, so it finds worktrees from any tool. The label comes from the folder:
 
 | Folder | Label |
 | --- | --- |
