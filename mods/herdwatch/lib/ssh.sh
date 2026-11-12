@@ -90,14 +90,17 @@ herdwatch_failure_rule_line() {
 }
 
 # Prints "<state> <reason>", e.g. "down timeout" or "auth hostkey".
+# An auth rule wins over the watchdog: a Tailscale check waits for a browser, so ssh is still open when it stops.
 herdwatch_failure_reason() {
-  local stderr_file="$1" exit_code="$2" output_file="$3" rule_line state reason _pattern
-  if [ "$exit_code" = "$WATCHDOG_EXIT_CODE" ]; then
+  local stderr_file="$1" exit_code="$2" output_file="$3" rule_line state="" reason _pattern
+  if rule_line=$(herdwatch_failure_rule_line "$stderr_file"); then
+    read -r state reason _pattern <<<"$rule_line"
+  fi
+  if [ "$exit_code" = "$WATCHDOG_EXIT_CODE" ] && [ "$state" != auth ]; then
     echo "down timeout"
     return
   fi
-  if rule_line=$(herdwatch_failure_rule_line "$stderr_file"); then
-    read -r state reason _pattern <<<"$rule_line"
+  if [ -n "$state" ]; then
     echo "$state $reason"
     return
   fi

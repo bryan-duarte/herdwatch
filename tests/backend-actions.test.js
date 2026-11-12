@@ -31,6 +31,7 @@ target="$1"; shift
 case "$target" in
   deadhost) echo "ssh: Could not resolve hostname deadhost: nodename nor servname provided, or not known" >&2; exit 255 ;;
   slowhost) sleep 30 ;;
+  checkhost) printf '%s\n' "# Tailscale SSH requires an additional check." "# To authenticate, visit: https://login.tailscale.com/a/x" >&2; sleep 30 ;;
 esac
 exec sh -c "$*"
 `;
@@ -75,6 +76,8 @@ test("each kind of ssh error maps to its reason", () => {
     ["/home/dev/.ssh/config: line 3: Bad configuration option: foo", "255", "down ssh_config"],
     ["sh: command not found", "127", "down remote_shell"],
     ["", "124", "down timeout"],
+    ["# Tailscale SSH requires an additional check.", "124", "auth tailscale_check"],
+    ["ssh: connect to host devbox port 22: Connection refused", "124", "down timeout"],
     ["", "1", "down unknown"],
   ];
   const folder = scratchDir();
@@ -101,6 +104,14 @@ test("a host that does not answer in time fails with the watchdog code", () => {
   const script = `RUNTIME_DIR="${folder}"; SSH_TIMEOUT=1; herdwatch_set_ssh_options; ` +
     `herdwatch_run_remote_script slowhost /dev/null true 1 "${folder}/out" "${folder}/err"; echo $?`;
   assert.equal(bashWithLibraries(script, sandbox.env), String(WATCHDOG_EXIT_CODE));
+});
+
+test("a Tailscale check that waits for the browser past the timeout shows as the check, not a timeout", () => {
+  const sandbox = backendSandbox({ hosts: "kali checkhost\n", settings: "SSH_TIMEOUT=1\n" });
+  const [kali] = JSON.parse(sandbox.run("snapshot").stdout).hosts;
+  assert.equal(kali.state, "auth");
+  assert.equal(kali.reason, "tailscale_check");
+  assert.equal(kali.detail, "# Tailscale SSH requires an additional check.");
 });
 
 test("a snapshot names config problems, the reason a host is down, and a pinned port that stopped", () => {
