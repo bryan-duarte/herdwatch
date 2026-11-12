@@ -1,15 +1,21 @@
 # shellcheck shell=sh
-# herdwatch worktree probe v2. The collector sends this file over ssh stdin: sh -s -- <max_depth> <root>...
-# Output: "worktrees=1", "--worktrees--", then one row per linked worktree: size_kb, tool, repository, branch,
-# path (~), changed files, ahead, behind, last commit (epoch), absolute path.
+# herdwatch worktree probe v3. The collector sends this file over ssh stdin:
+#   sh -s -- <max_depth> <merged branches, comma-separated> <root>...
+# Output: "worktrees=1", "missing_roots=<roots>", "--worktrees--", then one row per linked worktree: size_kb, tool,
+# repository, branch, path (~), changed files, ahead, behind, last commit (epoch), absolute path, created (epoch),
+# last git activity (epoch), merged into, git common dir, default branch of origin.
 # A linked worktree has a ".git" file "gitdir: <repo>/.git/worktrees/<name>", and the main repository lists each
 # one in "<repo>/.git/worktrees/<name>/gitdir", so the tool that made a worktree does not matter.
 LC_ALL=C
 export LC_ALL
 default_max_depth=7
+default_merged_branches='main,master,develop,trunk'
 max_depth="${1:-$default_max_depth}"
+merged_branches=$(printf '%s' "${2:-$default_merged_branches}" | tr ',' ' ')
+[ "$#" -gt 0 ] && shift
 [ "$#" -gt 0 ] && shift
 [ "$#" -gt 0 ] || set -- "$HOME"
+missing_roots=
 tab=$(printf '\t')
 candidates=$(mktemp)
 
@@ -58,7 +64,10 @@ find_git_entries() {
 
 collect_candidates() {
   for root in "$@"; do
-    [ -d "$root" ] || continue
+    if [ ! -d "$root" ]; then
+      missing_roots="$missing_roots $(home_relative "$root")"
+      continue
+    fi
     find_git_entries "$root" | while IFS= read -r git_entry; do
       if [ -d "$git_entry" ]; then
         add_worktrees_from_registry "$git_entry"
@@ -128,16 +137,62 @@ worktree_health() {
   printf '%s\t%s\t%s' "$changed_files" "${ahead_behind:-0	0}" "${last_commit:-0}"
 }
 
+change_time_of() {
+  stat -c %Z "$1" 2>/dev/null || stat -f %c "$1" 2>/dev/null
+}
+
+# The time of the first reflog entry: "<old> <new> <name> <email> <epoch> <zone><tab><message>".
+created_time_of() {
+  head -n 1 "$1/logs/HEAD" 2>/dev/null | awk -F '\t' '{ count = split($1, words, " "); if (count >= 2) print words[count - 1] }'
+}
+
+default_remote_branch() {
+  git -C "$1" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null
+}
+
+# The first branch that holds every commit of the worktree: origin's default branch, then the merged branches,
+# each as a local branch or on origin. The worktree's own branch does not count, and neither does a branch at the
+# same commit: a worktree without a commit of its own is new, not merged.
+first_merged_branch() {
+  worktree_dir="$1"
+  own_branch="$2"
+  head_commit=$(git -C "$worktree_dir" rev-parse --verify --quiet HEAD 2>/dev/null)
+  for name in $(default_remote_branch "$worktree_dir") $merged_branches; do
+    for candidate in "$name" "origin/$name"; do
+      case "$candidate" in "$own_branch" | "origin/$own_branch" | origin/origin/*) continue ;; esac
+      candidate_commit=$(git -C "$worktree_dir" rev-parse --verify --quiet "$candidate^{commit}" 2>/dev/null) || continue
+      [ "$candidate_commit" = "$head_commit" ] && continue
+      if git -C "$worktree_dir" merge-base --is-ancestor HEAD "$candidate" 2>/dev/null; then
+        printf '%s\n' "$candidate"
+        return 0
+      fi
+    done
+  done
+}
+
+worktree_history() {
+  worktree_dir="$1"
+  admin_dir="$2"
+  own_branch="$3"
+  common_dir=$(cd "$worktree_dir" 2>/dev/null && cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)
+  default_branch=$(default_remote_branch "$worktree_dir")
+  printf '%s\t%s\t%s\t%s\t%s' "$(created_time_of "$admin_dir")" "$(change_time_of "$admin_dir/index")" \
+    "$(first_merged_branch "$worktree_dir" "$own_branch")" "${common_dir%/}" "${default_branch#origin/}"
+}
+
 print_worktree_rows() {
   sort -u -t "$tab" -k1,1 "$candidates" | while IFS="$tab" read -r worktree_dir admin_dir; do
     size_kb=$(du -sk "$worktree_dir" 2>/dev/null | cut -f1)
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "${size_kb:-0}" "$(tool_of "$worktree_dir")" "$(repository_of "$admin_dir")" \
-      "$(branch_of "$admin_dir")" "$(home_relative "$worktree_dir")" "$(worktree_health "$worktree_dir")" "$worktree_dir"
+    branch=$(branch_of "$admin_dir")
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "${size_kb:-0}" "$(tool_of "$worktree_dir")" "$(repository_of "$admin_dir")" \
+      "$branch" "$(home_relative "$worktree_dir")" "$(worktree_health "$worktree_dir")" "$worktree_dir" \
+      "$(worktree_history "$worktree_dir" "$admin_dir" "$branch")"
   done
 }
 
 collect_candidates "$@"
 echo "worktrees=1"
+echo "missing_roots=${missing_roots# }"
 echo "--worktrees--"
 print_worktree_rows
 rm -f "$candidates"

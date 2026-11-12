@@ -2,9 +2,11 @@ import { div, image, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { agentMark } from "../agent-marks.js";
 import { TOKYO_NIGHT, gradientAt, toolColor } from "../palette.js";
+import { programMark } from "../program-marks.js";
 
 /** @typedef {import("gpui-kit").Color} Color */
 /** @typedef {import("../schemas.js").Element} Element */
+/** @typedef {import("../schemas.js").ModContext} ModContext */
 
 const PERCENT_SCALE = 100;
 const METER_CELL_WIDTH_PX = 5;
@@ -22,6 +24,14 @@ const CONTROL_RADIUS_PX = 5;
 const CONTROL_INSET_PX = 2;
 const ICON_BUTTON_SIZE_PX = 24;
 const ICON_SIZE_PX = 14;
+const ROW_BUTTON_SIZE_PX = 18;
+const ROW_BUTTON_ICON_SIZE_PX = 11;
+const CHECKBOX_SIZE_PX = 14;
+const CHECK_ICON_SIZE_PX = 11;
+const DIALOG_BUTTON_HEIGHT_PX = 26;
+const PROGRAM_MARK_SIZE_PX = 13;
+const PRIMARY_HOVER_OPACITY = 0.85;
+const PRIMARY_PRESSED_OPACITY = 0.7;
 const KEYCAP_SIZE_PX = 16;
 const TAB_DOT_SIZE_PX = 7;
 export const ROW_LABEL_WIDTH_PX = 54;
@@ -35,7 +45,8 @@ const SUPERSCRIPT_DIGITS = ["⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷",
 /**
  * @typedef {"gauge" | "bot" | "plug" | "folder-git-2" | "activity" | "server" | "cpu" | "memory-stick" | "hard-drive"
  *   | "arrow-down-up" | "microchip" | "git-branch" | "history" | "arrow-down-wide-narrow" | "triangle-alert" | "layers"
- *   | "archive" | "file-diff" | "arrow-down-to-line" | "keyboard"} UiGlyph
+ *   | "archive" | "file-diff" | "arrow-down-to-line" | "keyboard" | "pin" | "pin-off" | "external-link" | "square"
+ *   | "square-x" | "trash-2" | "git-merge" | "container" | "check"} UiGlyph
  */
 
 /**
@@ -96,16 +107,17 @@ export const panelTitle = (glyph, label, color) => titleRow(uiIcon(glyph).text_c
 
 /**
  * Makes an element a button: pointer, tooltip, and a click that does not reach the pane under it.
+ * The handler gets the click's context, for calls such as cx.open_url.
  * @template {Element} Target
  * @param {Target} element
  * @param {string} tooltip
- * @param {() => void} onPress
+ * @param {(cx: ModContext) => void} onPress
  * @returns {Target}
  */
 export function pressable(element, tooltip, onPress) {
   return element.cursor_pointer().tooltip(tooltip).on_click((_event, cx) => {
     cx.stop_propagation();
-    onPress();
+    onPress(cx);
   });
 }
 
@@ -185,6 +197,21 @@ export function agentIcon(agentName, sizePx = AGENT_MARK_SIZE_PX) {
 }
 
 /**
+ * A program's mark when it has one (Next.js, Docker, PostgreSQL), then its name. A program without a mark never gets
+ * the sheep, because the sheep means an agent. The tooltip gives the product name of the mark.
+ * @param {string} id
+ * @param {string} processName
+ * @param {Color} color
+ */
+export function programLabel(id, processName, color) {
+  const mark = programMark(processName);
+  return h_flex().id(id).min_w(0).gap(5).items_center()
+    .when(Boolean(mark), (element) => element.tooltip(mark.name)
+      .child(svg(mark.path).size(PROGRAM_MARK_SIZE_PX).flex_none().text_color(TOKYO_NIGHT.foreground)))
+    .child(truncatedText(processName, color));
+}
+
+/**
  * The agent's mark and its short name; in a narrow pane the mark alone. The tooltip gives the full product name.
  * @param {string} id
  * @param {string} agentName
@@ -240,6 +267,58 @@ export function iconButton({ id, icon, tooltip, hoverColor = TOKYO_NIGHT.foregro
     .active((style) => style.bg(TOKYO_NIGHT.border))
     .child(svg(icon).size(ICON_SIZE_PX));
   return pressable(frame, tooltip, onPress);
+}
+
+/**
+ * A small glyph button for a table row. A disabled button keeps its tooltip, so it can say why.
+ * @param {{ id: string, glyph: UiGlyph, tooltip: string, hoverColor?: Color, color?: Color, isDisabled?: boolean, onPress: (cx: ModContext) => void }} button
+ */
+export function rowButton({ id, glyph, tooltip, hoverColor = TOKYO_NIGHT.foreground, color = TOKYO_NIGHT.dim, isDisabled = false, onPress }) {
+  const frame = div().id(id).size(ROW_BUTTON_SIZE_PX).flex_none().flex().items_center().justify_center().rounded(4)
+    .child(uiIcon(glyph, ROW_BUTTON_ICON_SIZE_PX));
+  if (isDisabled) return frame.text_color(TOKYO_NIGHT.terminalBlack).tooltip(tooltip);
+  const live = frame.text_color(color)
+    .hover((style) => style.bg(TOKYO_NIGHT.highlight).text_color(hoverColor))
+    .active((style) => style.bg(TOKYO_NIGHT.border));
+  return pressable(live, tooltip, onPress);
+}
+
+/**
+ * @param {{ id: string, processName: string, pid: number, onPress: () => void }} button
+ */
+export const killButton = ({ id, processName, pid, onPress }) => rowButton({
+  id,
+  glyph: "square-x",
+  hoverColor: TOKYO_NIGHT.red,
+  tooltip: `Kill ${processName} (pid ${pid}) and the processes under it`,
+  onPress,
+});
+
+/**
+ * A framed text button for dialogs. The primary button is filled; a destructive one is red.
+ * @param {{ id: string, label: string, tooltip: string, isPrimary?: boolean, isDestructive?: boolean, isDisabled?: boolean, onPress: (cx: ModContext) => void }} button
+ */
+export function textButton({ id, label, tooltip, isPrimary = false, isDestructive = false, isDisabled = false, onPress }) {
+  const accent = isDestructive ? TOKYO_NIGHT.red : TOKYO_NIGHT.blue;
+  const frame = h_flex().id(id).h(DIALOG_BUTTON_HEIGHT_PX).px(12).items_center().rounded(CONTROL_RADIUS_PX).border_1().font_semibold().child(label);
+  if (isDisabled) return frame.border_color(TOKYO_NIGHT.border).text_color(TOKYO_NIGHT.comment).tooltip(tooltip);
+  const look = isPrimary
+    ? frame.bg(accent).border_color(accent).text_color(TOKYO_NIGHT.background).hover((style) => style.opacity(PRIMARY_HOVER_OPACITY))
+    : withIdleStates(frame.border_color(TOKYO_NIGHT.border).text_color(TOKYO_NIGHT.foregroundDark));
+  return pressable(look.active((style) => style.opacity(PRIMARY_PRESSED_OPACITY)), tooltip, onPress);
+}
+
+/**
+ * A checkbox with its label; the whole row toggles it.
+ * @param {{ id: string, label: string, isChecked: boolean, onToggle: () => void }} checkbox
+ */
+export function checkbox({ id, label, isChecked, onToggle }) {
+  const box = div().size(CHECKBOX_SIZE_PX).flex_none().flex().items_center().justify_center().rounded(3).border_1()
+    .border_color(isChecked ? TOKYO_NIGHT.blue : TOKYO_NIGHT.dim).bg(isChecked ? TOKYO_NIGHT.blue : TOKYO_NIGHT.backgroundDark)
+    .text_color(TOKYO_NIGHT.background)
+    .when(isChecked, (element) => element.child(uiIcon("check", CHECK_ICON_SIZE_PX)));
+  const row = h_flex().id(id).gap(8).items_center().px(4).py(2).rounded(4).text_color(TOKYO_NIGHT.foreground).child(box).child(label);
+  return pressable(withIdleStates(row), isChecked ? "Click to clear" : "Click to tick", onToggle);
 }
 
 /**

@@ -76,8 +76,12 @@ filter_agent_candidates() {
     }'
 }
 
+# Always two tab-separated fields (empty outside a repository), so the columns after them keep their place.
 print_repository_details() {
-  git_output=$(git -C "$1" rev-parse --abbrev-ref HEAD --path-format=absolute --git-common-dir 2>/dev/null) || return 0
+  git_output=$(git -C "$1" rev-parse --abbrev-ref HEAD --path-format=absolute --git-common-dir 2>/dev/null) || {
+    printf '\t'
+    return 0
+  }
   branch=$(printf '%s\n' "$git_output" | sed -n 1p)
   common_dir=$(printf '%s\n' "$git_output" | sed -n 2p)
   common_dir=${common_dir%/}

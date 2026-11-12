@@ -3,13 +3,14 @@ set -u
 
 HERDWATCH_ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 
-for library in state config record lock ssh collect alerts worktrees snapshot; do
+for library in state problems config record lock ssh pins collect alerts worktrees docker snapshot actions; do
   # shellcheck source=/dev/null
   . "$HERDWATCH_ROOT/lib/$library.sh"
 done
 
 herdwatch_usage() {
-  echo "usage: herdwatch {snapshot|worktrees}" >&2
+  echo "usage: herdwatch {snapshot|worktrees|docker}" >&2
+  echo "       herdwatch action {${ACTION_NAMES// /|}} <label> [args...]" >&2
 }
 
 herdwatch_main() {
@@ -21,6 +22,15 @@ herdwatch_main() {
     worktrees)
       herdwatch_resolve_dirs || exit 1
       herdwatch_measure_worktrees
+      ;;
+    docker)
+      herdwatch_resolve_dirs || exit 1
+      herdwatch_measure_docker
+      ;;
+    action)
+      herdwatch_resolve_dirs || exit 1
+      shift
+      herdwatch_run_action "$@"
       ;;
     *)
       herdwatch_usage

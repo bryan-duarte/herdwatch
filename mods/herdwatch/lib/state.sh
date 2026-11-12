@@ -6,7 +6,7 @@ herdwatch_resolve_dirs() {
   CONFIG_DIR="${HERDWATCH_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/herdwatch}"
   STATE_DIR="${HERDWATCH_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/herdwatch}"
   RUNTIME_DIR="/tmp/herdwatch-$(id -u)"
-  mkdir -p "$CONFIG_DIR" "$STATE_DIR/hosts" "$STATE_DIR/alerts" || return 1
+  mkdir -p "$CONFIG_DIR" "$STATE_DIR/hosts" "$STATE_DIR/alerts/ports" || return 1
   mkdir -m 700 "$RUNTIME_DIR" 2>/dev/null
   herdwatch_secure_runtime_dir || {
     echo "herdwatch: $RUNTIME_DIR belongs to another user or is a symlink" >&2

@@ -1,9 +1,12 @@
 import { setShared, shared } from "herdr";
+import { dockerOrEmpty } from "./docker.js";
 import { CHART_RANGE_SAMPLES, DEFAULT_CHART_RANGE_SAMPLES, historyOrEmpty } from "./history.js";
 import { isRecord, monitorStateOrNull } from "./snapshot.js";
 import { WORKTREE_FILTER_NAMES, worktreesOrEmpty } from "./worktrees.js";
 
+/** @typedef {import("./schemas.js").BackendFailure} BackendFailure */
 /** @typedef {import("./schemas.js").ConsoleChoices} ConsoleChoices */
+/** @typedef {import("./schemas.js").DockerByHost} DockerByHost */
 /** @typedef {import("./schemas.js").ConsoleTab} ConsoleTab */
 /** @typedef {import("./schemas.js").MonitorHistory} MonitorHistory */
 /** @typedef {import("./schemas.js").ProcessSort} ProcessSort */
@@ -14,12 +17,13 @@ const SHARED_KEYS = {
   monitorState: "herdwatch.state",
   history: "herdwatch.history",
   worktrees: "herdwatch.worktrees",
+  docker: "herdwatch.docker",
   sort: "herdwatch.sort",
   pollLease: "herdwatch.poller",
 };
 const CONSOLE_CHOICES_STORAGE_KEY = "herdwatch.view";
 const POLL_LEASE_SECONDS = 12;
-export const CONSOLE_TABS = /** @type {ConsoleTab[]} */ (["overview", "agents", "ports", "worktrees", "procs"]);
+export const CONSOLE_TABS = /** @type {ConsoleTab[]} */ (["overview", "agents", "ports", "worktrees", "docker", "procs"]);
 
 /** @type {ConsoleChoices} */
 const DEFAULT_CONSOLE_CHOICES = { host: null, tab: "overview", range: DEFAULT_CHART_RANGE_SAMPLES, filter: "all" };
@@ -27,6 +31,7 @@ const DEFAULT_CONSOLE_CHOICES = { host: null, tab: "overview", range: DEFAULT_CH
 export const readMonitorState = () => monitorStateOrNull(shared(SHARED_KEYS.monitorState));
 export const readHistory = () => historyOrEmpty(shared(SHARED_KEYS.history));
 export const readWorktrees = () => worktreesOrEmpty(shared(SHARED_KEYS.worktrees));
+export const readDocker = () => dockerOrEmpty(shared(SHARED_KEYS.docker));
 
 /** @returns {ProcessSort} */
 export const readSort = () => (shared(SHARED_KEYS.sort) === "mem" ? "mem" : "cpu");
@@ -43,11 +48,14 @@ export function publishPoll(lightSnapshot, history) {
 /** @param {WorktreesByHost} worktreesByHost */
 export const publishWorktrees = (worktreesByHost) => setShared(SHARED_KEYS.worktrees, worktreesByHost);
 
+/** @param {DockerByHost} dockerByHost */
+export const publishDocker = (dockerByHost) => setShared(SHARED_KEYS.docker, dockerByHost);
+
 /**
- * The last good snapshot stays on screen next to the error.
- * @param {string} error
+ * The last good snapshot stays on screen next to the failure.
+ * @param {BackendFailure} failure
  */
-export const publishPollError = (error) => setShared(SHARED_KEYS.monitorState, { snapshot: readMonitorState()?.snapshot ?? null, error });
+export const publishPollError = (failure) => setShared(SHARED_KEYS.monitorState, { snapshot: readMonitorState()?.snapshot ?? null, error: failure });
 
 /** @param {unknown} stored @param {string} copyId @param {number} now */
 function isLeaseHeldByAnotherCopy(stored, copyId, now) {

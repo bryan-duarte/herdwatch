@@ -1,1 +1,1 @@
-[{"label":"devbox","cpu_pct":95,"mem_pct":40,"top_process":"node"},{"label":"other","cpu_pct":null,"mem_pct":91,"top_process":"my \"quoted\" \\ name"}]
+[{"kind":"hot","label":"devbox","cpu_pct":95,"mem_pct":40,"top_process":"node","port":null},{"kind":"hot","label":"other","cpu_pct":null,"mem_pct":91,"top_process":"my \"quoted\" \\ name","port":null},{"kind":"port_down","label":"devbox","cpu_pct":null,"mem_pct":null,"top_process":"","port":3000}]

@@ -1,6 +1,7 @@
-probe=2
+probe=3
 home=/Users/dev
 os=darwin
+missing_tools=git
 ncpu=10
 uptime_seconds=372164
 cpu_pct=24

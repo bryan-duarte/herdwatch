@@ -67,6 +67,9 @@ export function byteRate(bytesPerSecond) {
 /** @param {number | null} percent */
 export const percentText = (percent) => (Number.isFinite(percent) ? `${Math.round(percent)}%` : "?");
 
+/** @param {string} sshTarget */
+export const hostNameOfTarget = (sshTarget) => sshTarget.replace(/^ssh:\/\//, "").replace(/^[^@]*@/, "").replace(/:\d+$/, "");
+
 /** @param {string} path @param {string} home */
 export function homeRelative(path, home) {
   if (!path) return "";

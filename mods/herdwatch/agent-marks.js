@@ -9,7 +9,7 @@
 const OWN_MARKS_FOLDER = "mods/herdwatch/icons/agents";
 
 /** @param {string} key @param {string} name @param {boolean} tint @returns {AgentMark} */
-const herdrMark = (key, name, tint) => ({ name, path: `icons/${key}.svg`, tint, isDefault: false });
+export const herdrMark = (key, name, tint) => ({ name, path: `icons/${key}.svg`, tint, isDefault: false });
 
 /** @param {string} file @param {string} name @param {boolean} tint @returns {AgentMark} */
 const ownMark = (file, name, tint) => ({ name, path: `${OWN_MARKS_FOLDER}/${file}`, tint, isDefault: false });

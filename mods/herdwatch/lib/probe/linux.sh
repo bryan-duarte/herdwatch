@@ -101,8 +101,15 @@ linux_agent_candidates() {
     done
 }
 
+# pid, ppid, cpu, rss_kb, name. The CPU of the top sample wins over the lifetime average of ps.
 linux_process_parents() {
-  ps -eo pid=,ppid= 2>/dev/null | awk '{ printf "%s\t%s\n", $1, $2 }'
+  ps -eo pid=,ppid=,pcpu=,rss=,comm= 2>/dev/null | awk -F '\t' 'FILENAME == ARGV[1] { sampled_cpu[$1] = $2; next }
+    {
+      split($0, column, " ")
+      name = $0; sub(/^ *[0-9]+ +[0-9]+ +[^ ]+ +[^ ]+ +/, "", name)
+      cpu = (column[1] in sampled_cpu) ? sampled_cpu[column[1]] : column[3]
+      printf "%s\t%s\t%s\t%s\t%s\n", column[1], column[2], cpu, column[4], name
+    }' "$work_dir/cpu_by_pid" -
 }
 
 linux_listening_ports() {
@@ -136,6 +143,7 @@ linux_probe() {
   awk '{ printf "load=%s %s %s\n", $1, $2, $3 }' /proc/loadavg
   linux_print_memory
   echo "procs=$(find /proc -maxdepth 1 -name '[0-9]*' -type d 2>/dev/null | wc -l | tr -d ' ')"
+  print_missing_tools ss git
   print_disk_usage /
   linux_print_disk_counters
   linux_print_network_counters

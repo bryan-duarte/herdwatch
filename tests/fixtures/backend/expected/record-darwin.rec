@@ -3,7 +3,7 @@ target=mac
 state=ok
 polled_at=1000
 updated_at=1000
-error=
+rtt_ms=
 home=/Users/dev
 os=darwin
 ncpu=10
@@ -14,6 +14,7 @@ procs=726
 disk_pct=49
 disk_total_kb=971350180
 disk_used_kb=448052248
+missing_tools=git
 mem_total_kb=16777216
 mem_used_kb=12860720
 mem_pct=77
@@ -31,10 +32,10 @@ net_tx_bytes=9907670459
 1844	13.0	0.8	0	Google Chrome Helper (Aperitif)
 5990	11.3	0.3	0	hex
 [agents]
-3092	claude	12924	2.5	2.5	/Users/dev/Documents/src/monitor	main	monitor
-5783	claude	12565	1.8	1.6	/Users/dev/Documents/src/site/.claude/worktrees/webapp-copy-updates-6c117b	claude/webapp-copy-updates-6c117b	site
-13767	claude	11828	0.1	0.9	/Users/dev/Documents/src/notes		
-24069	claude	4562	0.1	0.6	/Users/dev/Documents/src/monitor	main	monitor
+3092	claude	12924	2.5	2.5	/Users/dev/Documents/src/monitor	main	monitor				
+5783	claude	12565	1.8	1.6	/Users/dev/Documents/src/site/.claude/worktrees/webapp-copy-updates-6c117b	claude/webapp-copy-updates-6c117b	site				
+13767	claude	11828	0.1	0.9	/Users/dev/Documents/src/notes						
+24069	claude	4562	0.1	0.6	/Users/dev/Documents/src/monitor	main	monitor				
 [ports]
 65046	1024	rapportd	
 60768	1024	rapportd	

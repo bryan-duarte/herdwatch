@@ -15,6 +15,11 @@ export const fakeHerdr = {
   notifications: [],
   sounds: [],
   commands: [],
+  overlays: [],
+  closedOverlays: [],
+  terminals: [],
+  hcCalls: [],
+  hcHandler: async () => ({ code: 0, stdout: "", stderr: "" }),
 };
 
 export function resetFakeHerdr() {
@@ -31,6 +36,11 @@ export function resetFakeHerdr() {
   fakeHerdr.notifications = [];
   fakeHerdr.sounds = [];
   fakeHerdr.commands = [];
+  fakeHerdr.overlays = [];
+  fakeHerdr.closedOverlays = [];
+  fakeHerdr.terminals = [];
+  fakeHerdr.hcCalls = [];
+  fakeHerdr.hcHandler = async () => ({ code: 0, stdout: "", stderr: "" });
 }
 
 export const shared = (key) => structuredClone(fakeHerdr.sharedState.get(key));
@@ -71,3 +81,20 @@ export function playSound(sound) {
 }
 
 export const nextCommand = () => new Promise(() => {});
+
+export async function hc(args) {
+  fakeHerdr.hcCalls.push(args);
+  return fakeHerdr.hcHandler(args);
+}
+
+export const terminals = () => fakeHerdr.terminals;
+
+export function openOverlay(spec) {
+  fakeHerdr.overlays.push(spec);
+  return `overlay-${fakeHerdr.overlays.length}`;
+}
+
+export function closeOverlay(id) {
+  fakeHerdr.closedOverlays.push(id);
+  return null;
+}

@@ -1,17 +1,17 @@
-# Turns probe v2 output into a host record. Input files: the previous record (or /dev/null), then the probe output.
-# Variables: label, target, now. The agent pattern comes from ENVIRON["HERDWATCH_AGENT_PATTERN"], so a user regex
-# never becomes program text. A byte counter becomes a rate against the previous record, so a rate needs two polls.
+# Turns probe v3 output into a host record. Input files: the previous record (or /dev/null), then the probe output.
+# Variables: label, target, now, rtt_ms (empty when not measured). The agent pattern comes from
+# ENVIRON["HERDWATCH_AGENT_PATTERN"], so a user regex never becomes program text. A byte counter becomes a rate against the previous record, so a rate needs two polls.
 BEGIN {
   agent_pattern = ENVIRON["HERDWATCH_AGENT_PATTERN"]
   section = ""
   PERCENT_SCALE = 100
   PROCESS_PID = 1; PROCESS_CPU = 2; PROCESS_MEM = 3; PROCESS_NAME = 4; PROCESS_PATH = 5
   PROCESS_COLUMNS = 5
-  AGENT_COLUMNS = 8; AGENT_MIN_COLUMNS = 6
+  AGENT_COLUMNS = 12; AGENT_MIN_COLUMNS = 6
   PORT_NUMBER = 1; PORT_PID = 2; PORT_PROCESS = 3; PORT_AGENT_PID = 4
   PORT_COLUMNS = 4
   split("disk_read disk_write disk_io net_rx net_tx", rate_names, " ")
-  split("home os ncpu uptime_seconds cpu_pct cores load procs disk_pct disk_total_kb disk_used_kb gpu_name gpu_pct gpu_mem_used_mib gpu_mem_total_mib", copied_keys, " ")
+  split("home os ncpu uptime_seconds cpu_pct cores load procs disk_pct disk_total_kb disk_used_kb gpu_name gpu_pct gpu_mem_used_mib gpu_mem_total_mib missing_tools", copied_keys, " ")
 }
 
 function printable(text) {
@@ -82,7 +82,7 @@ function print_rows(section_name, rows, count,   row) {
 
 END {
   memory_used_kb = probe["mem_total_kb"] - probe["mem_avail_kb"]
-  printf "label=%s\ntarget=%s\nstate=ok\npolled_at=%s\nupdated_at=%s\nerror=\n", label, target, now, now
+  printf "label=%s\ntarget=%s\nstate=ok\npolled_at=%s\nupdated_at=%s\nrtt_ms=%s\n", label, target, now, now, rtt_ms
   for (i = 1; i in copied_keys; i++) if (copied_keys[i] in probe) printf "%s=%s\n", copied_keys[i], probe[copied_keys[i]]
   printf "mem_total_kb=%s\nmem_used_kb=%d\nmem_pct=%s\n", probe["mem_total_kb"], memory_used_kb, percent(memory_used_kb, probe["mem_total_kb"])
   printf "swap_total_kb=%s\nswap_used_kb=%s\nswap_pct=%s\n", probe["swap_total_kb"], probe["swap_used_kb"], percent(probe["swap_used_kb"], probe["swap_total_kb"])

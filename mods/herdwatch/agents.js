@@ -1,4 +1,5 @@
 import { agents, panes, spaces } from "herdr";
+import { hostNameOfTarget } from "./format.js";
 import { agentKey } from "./history.js";
 
 /** @typedef {import("./schemas.js").AgentProcess} AgentProcess */
@@ -40,9 +41,6 @@ export function herdrAgents() {
       state: /** @type {AgentState} */ (agent.status),
     }));
 }
-
-/** @param {string} sshTarget */
-const hostNameOfTarget = (sshTarget) => sshTarget.replace(/^ssh:\/\//, "").replace(/^[^@]*@/, "").replace(/:\d+$/, "");
 
 /** @param {HostSnapshot} host @param {string | null} machine */
 function isSameMachine(host, machine) {

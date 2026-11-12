@@ -85,8 +85,12 @@ darwin_agent_candidates() {
     done
 }
 
+# pid, ppid, cpu, rss_kb, name. comm keeps spaces in the program path, so the name is the rest of the line.
 darwin_process_parents() {
-  ps -A -o pid=,ppid= 2>/dev/null | awk '{ printf "%s\t%s\n", $1, $2 }'
+  ps -A -o pid=,ppid=,%cpu=,rss=,comm= 2>/dev/null | awk '{
+    name = $0; sub(/^ *[0-9]+ +[0-9]+ +[^ ]+ +[^ ]+ +/, "", name); sub(/.*\//, "", name)
+    printf "%s\t%s\t%s\t%s\t%s\n", $1, $2, $3, $4, name
+  }'
 }
 
 darwin_listening_ports() {
@@ -106,6 +110,7 @@ darwin_probe() {
   sysctl -n vm.loadavg | awk '{ printf "load=%s %s %s\n", $2, $3, $4 }'
   darwin_print_memory
   echo "procs=$(ps -A -o pid= | wc -l | tr -d ' ')"
+  print_missing_tools lsof git
   [ -d "$darwin_data_volume" ] || darwin_data_volume=/
   print_disk_usage "$darwin_data_volume"
   darwin_print_disk_counters

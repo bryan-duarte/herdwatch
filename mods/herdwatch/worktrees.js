@@ -29,10 +29,27 @@ const hasUncommittedChanges = (worktree) => (worktree.changed_files ?? 0) > 0;
 /** @param {WorktreeItem} worktree */
 const isBehindUpstream = (worktree) => (worktree.behind ?? 0) > 0;
 
+/**
+ * Every commit is in a main branch and nothing is waiting to be committed, so removing it loses no work.
+ * @param {WorktreeItem} worktree
+ */
+export const isMergedWorktree = (worktree) => Boolean(worktree.merged_into) && !hasUncommittedChanges(worktree);
+
+/**
+ * @param {WorktreeItem} worktree
+ * @param {AgentView[]} agents
+ * @returns {{ canDelete: boolean, reason: string }}
+ */
+export function deleteCheck(worktree, agents) {
+  if (hasAgentIn(worktree, agents)) return { canDelete: false, reason: "An agent works here. Stop it first." };
+  return { canDelete: true, reason: "Remove this worktree" };
+}
+
 /** @type {Record<WorktreeFilter, { label: string, tooltip: string, matches: (worktree: WorktreeItem, agents: AgentView[]) => boolean }>} */
 export const WORKTREE_FILTERS = {
   all: { label: "all", tooltip: "Show every worktree", matches: () => true },
   stale: { label: `stale > ${STALE_WORKTREE_DAYS}d`, tooltip: `No commit for ${STALE_WORKTREE_DAYS} days and no agent in it`, matches: isStaleWorktree },
+  merged: { label: "merged", tooltip: "Every commit is in a main branch, so the worktree is safe to remove", matches: isMergedWorktree },
   changed: { label: "uncommitted", tooltip: "Worktrees with uncommitted changes", matches: hasUncommittedChanges },
   agent: { label: "agent running", tooltip: "Worktrees where an agent works now", matches: hasAgentIn },
   behind: { label: "behind upstream", tooltip: "Worktrees behind their upstream branch", matches: isBehindUpstream },

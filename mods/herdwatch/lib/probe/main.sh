@@ -1,5 +1,5 @@
 # shellcheck shell=sh
-echo "probe=2"
+echo "probe=3"
 echo "home=$HOME"
 case "$(uname -s)" in
   Linux) linux_probe ;;

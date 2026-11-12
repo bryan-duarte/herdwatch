@@ -3,7 +3,7 @@ import { h_flex, v_flex } from "gpui-base";
 import { agentMark } from "../agent-marks.js";
 import { percentLevel } from "../health.js";
 import { GRADIENTS, TOKYO_NIGHT, gradientAt, levelColor } from "../palette.js";
-import { AGENT_MARKER, METER_CELL_STEP_PX, agentIcon, fixedCell, meter, panel, panelTitle, pressable, rightCell, segmentedControl, text, titleRow, truncatedText, uiIcon, withIdleStates } from "./widgets.js";
+import { AGENT_MARKER, METER_CELL_STEP_PX, agentIcon, fixedCell, meter, panel, panelTitle, killButton, pressable, programLabel, rightCell, segmentedControl, text, titleRow, uiIcon, withIdleStates } from "./widgets.js";
 
 /** @typedef {import("../schemas.js").ConsoleView} ConsoleView */
 /** @typedef {import("../schemas.js").HostSnapshot} HostSnapshot */
@@ -17,7 +17,8 @@ const ROW_HEIGHT_PX = 20;
 const CPU_METER_CELLS = 5;
 const TABLE_MAX_WIDTH_PX = 820;
 const PROCESS_MARK_SIZE_PX = 13;
-const COLUMN_WIDTH_PX = { marker: 14, pid: 64, cpuMeter: CPU_METER_CELLS * METER_CELL_STEP_PX, percent: 62 };
+const COLUMN_WIDTH_PX = { marker: 14, pid: 64, cpuMeter: CPU_METER_CELLS * METER_CELL_STEP_PX, percent: 62, kill: 18 };
+const FIRST_KILLABLE_PID = 2;
 const SORT_MARKER = "▾";
 /** @type {Record<ProcessSort, { column: string, name: string, key: string, button: string }>} */
 const SORTS = {
@@ -51,7 +52,8 @@ function tableHeader(view) {
     .child(div().flex_1().child("program"))
     .when(view.isWide, (element) => element.child(fixedCell(COLUMN_WIDTH_PX.cpuMeter)))
     .child(sortableHeader("cpu", view))
-    .child(sortableHeader("mem", view));
+    .child(sortableHeader("mem", view))
+    .child(fixedCell(COLUMN_WIDTH_PX.kill));
 }
 
 /**
@@ -63,8 +65,21 @@ function processMarker(process) {
   return agentMark(process.name).isDefault ? AGENT_MARKER : agentIcon(process.name, PROCESS_MARK_SIZE_PX);
 }
 
-/** @param {ProcessRow} process @param {MonitorSettings} settings @param {boolean} isWide */
-function processRow(process, settings, isWide) {
+/** @param {ProcessRow} process @param {ConsoleView} view @param {HostSnapshot} host */
+function killCell(process, view, host) {
+  const cell = fixedCell(COLUMN_WIDTH_PX.kill);
+  const canKill = Number.isFinite(process.pid) && process.pid >= FIRST_KILLABLE_PID;
+  if (!canKill) return cell;
+  return cell.child(killButton({
+    id: `proc-kill-${host.label}-${process.pid}`,
+    processName: process.name,
+    pid: process.pid,
+    onPress: () => view.onKill(host, process.pid),
+  }));
+}
+
+/** @param {ProcessRow} process @param {MonitorSettings} settings @param {ConsoleView} view @param {HostSnapshot} host */
+function processRow(process, settings, view, host) {
   const cpu = process.cpu ?? 0;
   const memory = process.mem ?? 0;
   const cpuShare = Math.min(cpu, PERCENT_SCALE) / PERCENT_SCALE;
@@ -73,10 +88,11 @@ function processRow(process, settings, isWide) {
   return h_flex().h(ROW_HEIGHT_PX).gap(8).items_center()
     .child(fixedCell(COLUMN_WIDTH_PX.marker).flex().items_center().text_color(TOKYO_NIGHT.green).child(processMarker(process)))
     .child(rightCell(String(process.pid ?? "?"), COLUMN_WIDTH_PX.pid, TOKYO_NIGHT.comment))
-    .child(truncatedText(process.name, process.agent ? TOKYO_NIGHT.foreground : TOKYO_NIGHT.foregroundDark).flex_1())
-    .when(isWide, (element) => element.child(meter(Math.min(cpu, PERCENT_SCALE), CPU_METER_CELLS, GRADIENTS.cpu)))
+    .child(programLabel(`proc-name-${host.label}-${process.pid}`, process.name, process.agent ? TOKYO_NIGHT.foreground : TOKYO_NIGHT.foregroundDark).flex_1())
+    .when(view.isWide, (element) => element.child(meter(Math.min(cpu, PERCENT_SCALE), CPU_METER_CELLS, GRADIENTS.cpu)))
     .child(rightCell(cpu.toFixed(1), COLUMN_WIDTH_PX.percent, cpuColor))
-    .child(rightCell(memory.toFixed(1), COLUMN_WIDTH_PX.percent, gradientAt(GRADIENTS.memory, memoryShare)));
+    .child(rightCell(memory.toFixed(1), COLUMN_WIDTH_PX.percent, gradientAt(GRADIENTS.memory, memoryShare)))
+    .child(killCell(process, view, host));
 }
 
 /**
@@ -95,7 +111,7 @@ export function processesPanel(view, host, settings) {
       id: `procs-${host.label}`,
       title: titleRow(panelTitle("activity", "procs", TOKYO_NIGHT.magenta), text(`top ${topProcesses.length}`, TOKYO_NIGHT.comment)),
       rightTitle: text(`by ${view.sort === "mem" ? "memory" : "cpu"}`, TOKYO_NIGHT.comment),
-      body: [v_flex().max_w(TABLE_MAX_WIDTH_PX).gap(2).child(tableHeader(view)).children(topProcesses.map((process) => processRow(process, settings, view.isWide)))],
+      body: [v_flex().max_w(TABLE_MAX_WIDTH_PX).gap(2).child(tableHeader(view)).children(topProcesses.map((process) => processRow(process, settings, view, host)))],
     }),
   ];
 }

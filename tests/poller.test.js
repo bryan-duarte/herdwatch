@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert";
 import { afterEach, beforeEach, test } from "node:test";
 import { fakeHerdr, resetFakeHerdr } from "herdr";
 import { Poller } from "../mods/herdwatch/poller.js";
-import { loadConsoleChoices, readHistory, readMonitorState, readWorktrees, takePollLease } from "../mods/herdwatch/store.js";
+import { loadConsoleChoices, readDocker, readHistory, readMonitorState, readWorktrees, takePollLease } from "../mods/herdwatch/store.js";
 import { snapshot } from "./support/snapshots.js";
 
 const POLL_LEASE_KEY = "herdwatch.poller";
@@ -45,7 +45,7 @@ test("a poll publishes the light snapshot, the history and the worktree lists", 
 });
 
 test("a hot host alert sends a notification with a sound", async () => {
-  backendPrints(snapshot({ alerts: [{ label: "devbox", cpu_pct: 97, mem_pct: 40, top_process: "cc1plus" }] }));
+  backendPrints(snapshot({ alerts: [{ kind: "hot", label: "devbox", cpu_pct: 97, mem_pct: 40, top_process: "cc1plus", port: null }] }));
   const cx = fakeContext();
   new Poller().tick(cx);
   await cx.settle();
@@ -59,12 +59,12 @@ test("a failed poll keeps the last snapshot next to the error", async () => {
   const firstCx = fakeContext();
   poller.tick(firstCx);
   await firstCx.settle();
-  fakeHerdr.execHandler = async () => ({ code: 1, stdout: "", stderr: "ssh: connect to host devbox port 22: timed out\n" });
+  fakeHerdr.execHandler = async () => ({ code: 2, stdout: "", stderr: "herdwatch: unexpected end of file\n" });
   const secondCx = fakeContext();
   poller.tick(secondCx);
   await secondCx.settle();
   const state = readMonitorState();
-  assert.equal(state.error, "ssh: connect to host devbox port 22: timed out");
+  assert.deepEqual(state.error, { reason: "mod_bug", detail: "herdwatch: unexpected end of file" });
   assert.equal(state.snapshot.hosts[0].label, "devbox");
 });
 
@@ -102,4 +102,40 @@ test("console choices fall back to the defaults for unknown values", () => {
   assert.deepEqual(loadConsoleChoices(), { host: "devbox", tab: "overview", range: 24, filter: "stale" });
   globalThis.localStorage = { getItem: () => "{broken" };
   assert.deepEqual(loadConsoleChoices(), { host: null, tab: "overview", range: 60, filter: "all" });
+});
+
+test("a pinned port that stops gives its own notification", async () => {
+  backendPrints(snapshot({ alerts: [{ kind: "port_down", label: "devbox", cpu_pct: null, mem_pct: null, top_process: "", port: 3000 }] }));
+  const cx = fakeContext();
+  new Poller().tick(cx);
+  await cx.settle();
+  assert.equal(fakeHerdr.notifications[0].title, "herdwatch: :3000 on devbox is down");
+  assert.deepEqual(fakeHerdr.sounds, ["blocked"]);
+});
+
+test("a due Docker measure runs the backend docker command and the lists go to their own key", async () => {
+  backendPrints(snapshot({ docker_due: true }));
+  const cx = fakeContext();
+  new Poller().tick(cx);
+  await cx.settle();
+  await cx.settle();
+  assert.deepEqual(fakeHerdr.execCalls.map((call) => call.args[1]), ["snapshot", "docker"]);
+  assert.equal(readMonitorState().snapshot.hosts[0].docker.containers.length, 0);
+  assert.equal(readDocker().devbox.state, "ok");
+});
+
+test("a backend that runs past its time limit counts as a timeout", async () => {
+  const realNow = Date.now;
+  const millisecondsPerCall = 20000;
+  let calls = 0;
+  Date.now = () => calls++ * millisecondsPerCall;
+  try {
+    fakeHerdr.execHandler = async () => ({ code: 143, stdout: "", stderr: "" });
+    const cx = fakeContext();
+    new Poller().tick(cx);
+    await cx.settle();
+  } finally {
+    Date.now = realNow;
+  }
+  assert.equal(readMonitorState().error.reason, "backend_timeout");
 });

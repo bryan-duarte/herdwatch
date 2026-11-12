@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { nowInSeconds } from "../mods/herdwatch/format.js";
-import { WORKTREE_FILTERS, splitWorktrees, worktreeTotals, worktreesOrEmpty, worktreesSignature } from "../mods/herdwatch/worktrees.js";
+import { WORKTREE_FILTERS, deleteCheck, splitWorktrees, worktreeTotals, worktreesOrEmpty, worktreesSignature } from "../mods/herdwatch/worktrees.js";
 import { agentProcess, snapshot, worktreeItem } from "./support/snapshots.js";
 
 const SECONDS_PER_DAY = 86400;
@@ -46,4 +46,17 @@ test("worktreesOrEmpty keeps only valid host entries", () => {
   const valid = { state: "ok", measured_at: 1, error: "", total_kb: 0, items: [] };
   assert.deepEqual(worktreesOrEmpty({ devbox: valid, broken: { state: "ok" } }), { devbox: valid });
   assert.deepEqual(worktreesOrEmpty(null), {});
+});
+
+test("the merged filter finds worktrees whose commits are all in a main branch", () => {
+  assert.equal(WORKTREE_FILTERS.merged.matches(worktreeItem({ merged_into: "origin/main" }), []), true);
+  assert.equal(WORKTREE_FILTERS.merged.matches(worktreeItem({ merged_into: "" }), []), false);
+  assert.equal(WORKTREE_FILTERS.merged.matches(worktreeItem({ merged_into: undefined }), []), false);
+  assert.equal(WORKTREE_FILTERS.merged.matches(worktreeItem({ merged_into: "main", changed_files: 2 }), []), false);
+});
+
+test("a worktree with an agent in it cannot be deleted, and the check says why", () => {
+  const worktree = worktreeItem({ absolute_path: "/home/dev/code/shop" });
+  assert.deepEqual(deleteCheck(worktree, [agentView("/home/dev/code/shop/src")]), { canDelete: false, reason: "An agent works here. Stop it first." });
+  assert.equal(deleteCheck(worktree, [agentView("/home/dev/code/other")]).canDelete, true);
 });

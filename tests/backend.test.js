@@ -20,8 +20,8 @@ const USAGE_EXIT_CODE = 2;
 const fixture = (name) => join(FIXTURES, name);
 const expected = (name) => readFileSync(join(FIXTURES, "expected", name), "utf8");
 
-function parseProbe({ label, target, now, previousRecord, probeOutput }) {
-  return execFileSync("awk", ["-v", `label=${label}`, "-v", `target=${target}`, "-v", `now=${now}`, "-f", PARSE_AWK, previousRecord, probeOutput], {
+function parseProbe({ label, target, now, previousRecord, probeOutput, rttMs = "" }) {
+  return execFileSync("awk", ["-v", `label=${label}`, "-v", `target=${target}`, "-v", `now=${now}`, "-v", `rtt_ms=${rttMs}`, "-f", PARSE_AWK, previousRecord, probeOutput], {
     env: { ...process.env, HERDWATCH_AGENT_PATTERN: AGENT_PATTERN },
     encoding: "utf8",
   });
@@ -45,7 +45,7 @@ test("parse.awk turns a first Linux probe into a record without rates", () => {
 
 test("parse.awk turns byte counters into rates against the previous record", () => {
   const previousRecord = writeScratch("devbox.rec", expected("record-linux.rec"));
-  const record = parseProbe({ label: "devbox", target: "dev@devbox", now: SECOND_POLL_AT, previousRecord, probeOutput: fixture("probe-linux-next.txt") });
+  const record = parseProbe({ label: "devbox", target: "dev@devbox", now: SECOND_POLL_AT, previousRecord, probeOutput: fixture("probe-linux-next.txt"), rttMs: "42" });
   assert.equal(record, expected("record-linux-next.rec"));
 });
 
@@ -57,12 +57,12 @@ test("parse.awk reads a macOS probe", () => {
 test("snapshot.awk prints a host record as JSON", () => {
   const linuxRecord = writeScratch("devbox.rec", expected("record-linux-next.rec"));
   const darwinRecord = writeScratch("mac.rec", expected("record-darwin.rec"));
-  assert.equal(snapshotJson("host", linuxRecord, { label: "devbox", target: "dev@devbox" }), expected("host-linux.json"));
+  assert.equal(snapshotJson("host", linuxRecord, { label: "devbox", target: "dev@devbox", pins: "8076 3000" }), expected("host-linux.json"));
   assert.equal(snapshotJson("host", darwinRecord, { label: "mac", target: "mac" }), expected("host-darwin.json"));
 });
 
 test("snapshot.awk prints a pending host when there is no record yet", () => {
-  assert.equal(snapshotJson("host", "/dev/null", { label: "fresh", target: "fresh" }), expected("host-pending.json"));
+  assert.equal(snapshotJson("host", "/dev/null", { label: "fresh", target: "fresh", pins: "3000" }), expected("host-pending.json"));
 });
 
 test("snapshot.awk prints worktrees and alerts as JSON", () => {

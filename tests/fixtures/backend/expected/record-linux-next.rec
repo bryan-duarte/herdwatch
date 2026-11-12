@@ -3,7 +3,7 @@ target=dev@devbox
 state=ok
 polled_at=1010
 updated_at=1010
-error=
+rtt_ms=42
 home=/home/dev
 os=linux
 ncpu=8
@@ -15,6 +15,7 @@ procs=425
 disk_pct=36
 disk_total_kb=462323560
 disk_used_kb=156585648
+missing_tools=
 mem_total_kb=24384568
 mem_used_kb=11220176
 mem_pct=46
@@ -38,10 +39,10 @@ net_tx_rate=500000
 666	2.0	0.0	0	systemd-logind
 6295	2.0	0.4	0	xfwm4
 [agents]
-40600	claude	17482	0.0	0.7	/home/dev/Repos/work/webapp/.claude/worktrees/news-ui-empty-state-418473	claude/news-ui-empty-state-418473	webapp
-66167	claude	15969	0.0	1.0	/home/dev/Repos/work/webapp/.claude/worktrees/agents-profile-bugs-67fd90	claude/agents-profile-bugs-67fd90	webapp
-76706	claude	15595	0.0	1.1	/home/dev/Repos/work/webapp/.claude/worktrees/agents-section-redesign-57df9d	claude/agents-section-redesign-57df9d	webapp
-94844	claude	15274	0.0	0.8	/home/dev/Repos/work/webapp/.claude/worktrees/webapp-description-options-753a31	claude/webapp-description-options-753a31	webapp
+40600	claude	17482	0.0	0.7	/home/dev/Repos/work/webapp/.claude/worktrees/news-ui-empty-state-418473	claude/news-ui-empty-state-418473	webapp	4.5	512000	3	claude, node, esbuild
+66167	claude	15969	0.0	1.0	/home/dev/Repos/work/webapp/.claude/worktrees/agents-profile-bugs-67fd90	claude/agents-profile-bugs-67fd90	webapp	4.5	512000	3	claude, node, esbuild
+76706	claude	15595	0.0	1.1	/home/dev/Repos/work/webapp/.claude/worktrees/agents-section-redesign-57df9d	claude/agents-section-redesign-57df9d	webapp	4.5	512000	3	claude, node, esbuild
+94844	claude	15274	0.0	0.8	/home/dev/Repos/work/webapp/.claude/worktrees/webapp-description-options-753a31	claude/webapp-description-options-753a31	webapp	4.5	512000	3	claude, node, esbuild
 [ports]
 6274	118004	MainThread	
 22			

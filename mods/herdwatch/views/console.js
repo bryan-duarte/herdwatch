@@ -1,11 +1,14 @@
 import { div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
+import { dockerOfHost } from "../docker.js";
+import { backendGuidance, configProblemLine, downForText, hostFailureGuidance, hostProblemGuidance, hostTabTooltip } from "../failure-guidance.js";
 import { ageSince, minutesIn, minutesText, nowInSeconds } from "../format.js";
 import { hostHealth } from "../health.js";
 import { CHART_RANGE_SAMPLES, SECONDS_PER_SAMPLE } from "../history.js";
 import { TOKYO_NIGHT, healthColor } from "../palette.js";
 import { worktreesOfHost } from "../worktrees.js";
 import { agentsPanel } from "./agents-panel.js";
+import { dockerPanel } from "./docker-panel.js";
 import { portsPanel } from "./ports-panel.js";
 import { processesPanel } from "./processes-panel.js";
 import { systemPanel } from "./system-panel.js";
@@ -18,11 +21,19 @@ import { AGENT_MARKER, hostTitle, iconButton, keycap, panel, segmentedControl, t
 /** @typedef {import("../schemas.js").Element} Element */
 /** @typedef {import("../schemas.js").HostSnapshot} HostSnapshot */
 /** @typedef {import("../schemas.js").MonitorSettings} MonitorSettings */
+/** @typedef {import("../schemas.js").Snapshot} Snapshot */
+
+/**
+ * @typedef {object} Notice
+ * @property {Color} color
+ * @property {string[]} lines
+ */
 
 const HEADER_HEIGHT_PX = 40;
 const FOOTER_HEIGHT_PX = 30;
 const CONSOLE_TEXT_SIZE_PX = 12;
 const CLOSE_ICON = "mods/herdwatch/icons/close.svg";
+const TABS_WITHOUT_OUTER_SCROLL = new Set(["worktrees", "docker"]);
 const RANGE_OPTIONS = CHART_RANGE_SAMPLES.map((samples) => {
   const rangeSeconds = samples * SECONDS_PER_SAMPLE;
   return { value: String(samples), label: minutesText(rangeSeconds), tooltip: `Show the last ${minutesIn(rangeSeconds)} minutes` };
@@ -35,7 +46,7 @@ function header(view) {
   const hostOptions = hosts.map((host, index) => ({
     value: host.label,
     label: host.label,
-    tooltip: `Show ${host.label} (${index + 1})`,
+    tooltip: hostTabTooltip(host, index, snapshot.settings),
     dotColor: snapshot ? healthColor(hostHealth(host, snapshot.settings)) : null,
   }));
   const hasHostTabs = hosts.length > 0 && Boolean(view.host);
@@ -63,6 +74,7 @@ function consoleTabs(view) {
     { value: "agents", label: "agents", glyph: "bot", count: host?.agents.length ?? 0, tooltip: "Coding agent sessions on this host" },
     { value: "ports", label: "ports", glyph: "plug", count: host?.ports.length ?? 0, tooltip: "Listening ports and the agent that owns each" },
     { value: "worktrees", label: "worktrees", glyph: "folder-git-2", count: host ? worktreesOfHost(view.worktrees, host).items.length : 0, tooltip: "Git worktrees, size and health" },
+    { value: "docker", label: "docker", glyph: "container", count: host ? dockerOfHost(view.docker, host).containers.length : null, tooltip: "Containers, images and volumes" },
     { value: "procs", label: "procs", glyph: "activity", count: view.monitorState?.snapshot?.settings.top_n ?? null, tooltip: "Top processes" },
   ];
   return div().px(10).py(6).flex_none().bg(TOKYO_NIGHT.backgroundDark).border_b(1).border_color(TOKYO_NIGHT.highlight)
@@ -87,41 +99,71 @@ function footer(view) {
       .child(uiIcon("keyboard")).child(div().min_w(0).truncate().child(keysHint)));
 }
 
+/** @param {Snapshot} snapshot */
+function lateLine(snapshot) {
+  const isPollLate = nowInSeconds() - snapshot.generated_at > snapshot.settings.stale_seconds;
+  if (!isPollLate) return null;
+  const isPreviousPollBusy = snapshot.collector.state === "busy";
+  const reason = isPreviousPollBusy ? " The previous poll still runs: a host answers slowly." : " The next poll is late.";
+  return `No fresh data since ${ageSince(snapshot.generated_at)}.${reason}`;
+}
+
 /**
  * @param {ConsoleView} view
- * @returns {{ color: Color, message: string } | null}
+ * @returns {Notice | null}
  */
 function notice(view) {
   const snapshot = view.monitorState?.snapshot;
-  if (view.monitorState?.error) return { color: TOKYO_NIGHT.red, message: `Backend error: ${view.monitorState.error}` };
-  if (!snapshot) return { color: TOKYO_NIGHT.yellow, message: "Waiting for the first poll of your hosts." };
-  if (!snapshot.hosts.length) return { color: TOKYO_NIGHT.dim, message: `No hosts. Add "label  ssh-target" lines to ${snapshot.hosts_file}` };
-  const isPollLate = nowInSeconds() - snapshot.generated_at > snapshot.settings.stale_seconds;
-  if (isPollLate) return { color: TOKYO_NIGHT.yellow, message: `No fresh data since ${ageSince(snapshot.generated_at)}. The next poll is late.` };
-  return null;
+  const failure = view.monitorState?.error;
+  if (failure) {
+    const { summary, nextStep } = backendGuidance(failure);
+    return { color: TOKYO_NIGHT.red, lines: [summary, ...(failure.detail ? [failure.detail] : []), `Next: ${nextStep}`] };
+  }
+  if (!snapshot) return { color: TOKYO_NIGHT.yellow, lines: ["Waiting for the first poll of your hosts."] };
+  const problemLines = snapshot.problems.map((problem) => configProblemLine(problem, snapshot.settings));
+  const latePollLine = lateLine(snapshot);
+  const warningLines = [...(latePollLine ? [latePollLine] : []), ...problemLines];
+  if (!snapshot.hosts.length) {
+    return { color: TOKYO_NIGHT.dim, lines: [`No hosts. Add "label  ssh-target" lines to ${snapshot.hosts_file}`, ...warningLines] };
+  }
+  return warningLines.length ? { color: TOKYO_NIGHT.yellow, lines: warningLines } : null;
 }
 
-/** @param {{ color: Color, message: string }} banner */
+/** @param {Notice} banner */
 const noticePanel = (banner) => panel({
   id: "herdwatch-notice",
   title: titleRow(uiIcon("triangle-alert").text_color(banner.color), text("notice", banner.color)),
   borderColor: banner.color,
-  body: [div().text_color(banner.color).child(banner.message)],
+  body: banner.lines.map((line) => div().text_color(banner.color).child(line)),
 });
 
-/** @param {HostSnapshot} host @param {number} hostNumber */
-function unreachablePanel(host, hostNumber) {
+/** @param {HostSnapshot} host @param {number} hostNumber @param {MonitorSettings} settings */
+function unreachablePanel(host, hostNumber, settings) {
   const isLoginRefused = host.state === "auth";
   const color = isLoginRefused ? TOKYO_NIGHT.yellow : TOKYO_NIGHT.red;
+  const { summary, nextStep } = hostFailureGuidance(host, settings);
   return panel({
     id: `state-${host.label}`,
     title: hostTitle(host.label, hostNumber, color),
-    rightTitle: text(isLoginRefused ? "login needed" : "down", color),
+    rightTitle: text(`${isLoginRefused ? "login needed" : "down"}${downForText(host)}`, color),
     borderColor: color,
     body: [
-      text(`✕ ${isLoginRefused ? "login refused" : "no answer"} · values below are from ${ageSince(host.updated_at)}`, color),
-      div().text_color(TOKYO_NIGHT.comment).child(host.error || "no error text"),
+      text(`✕ ${summary}`, color),
+      ...(host.detail ? [div().text_color(TOKYO_NIGHT.comment).child(`ssh: ${host.detail}`)] : []),
+      div().text_color(TOKYO_NIGHT.foregroundDark).child(`Next: ${nextStep}`),
+      text(`Values below are from ${ageSince(host.updated_at)}.`, TOKYO_NIGHT.comment),
     ],
+  });
+}
+
+/** @param {HostSnapshot} host */
+function hostNotesPanel(host) {
+  const lines = host.problems.map(hostProblemGuidance).map(({ summary, nextStep }) => `${summary} ${nextStep}`);
+  return panel({
+    id: `notes-${host.label}`,
+    title: titleRow(uiIcon("triangle-alert").text_color(TOKYO_NIGHT.yellow), text("host notes", TOKYO_NIGHT.yellow)),
+    borderColor: TOKYO_NIGHT.yellow,
+    body: lines.map((line) => div().text_color(TOKYO_NIGHT.yellow).child(line)),
   });
 }
 
@@ -144,6 +186,7 @@ function tabPanels(view, host, hostNumber, settings) {
   if (view.tab === "ports") return [portsPanel(view, host)];
   if (view.tab === "worktrees") return [worktreesPanel(view, host, settings)];
   if (view.tab === "procs") return processesPanel(view, host, settings);
+  if (view.tab === "docker") return [dockerPanel(view, host, settings)];
   return [systemPanel(view, host, hostNumber, settings), agentsPanel(view, host, settings)];
 }
 
@@ -158,8 +201,9 @@ function tabBody(view) {
   if (!snapshot || !host) return [];
   const hostNumber = snapshot.hosts.indexOf(host) + 1;
   if (host.state === "pending") return [waitingPanel(host, hostNumber)];
-  const unreachableNote = host.state === "ok" ? [] : [unreachablePanel(host, hostNumber)];
-  return [...unreachableNote, ...tabPanels(view, host, hostNumber, snapshot.settings)];
+  const unreachableNote = host.state === "ok" ? [] : [unreachablePanel(host, hostNumber, snapshot.settings)];
+  const hostNotes = host.problems.length ? [hostNotesPanel(host)] : [];
+  return [...unreachableNote, ...hostNotes, ...tabPanels(view, host, hostNumber, snapshot.settings)];
 }
 
 /**
@@ -170,7 +214,7 @@ function tabBody(view) {
 export function renderConsole(view, monospaceFont) {
   const banner = notice(view);
   const body = v_flex().id(`console-body-${view.tab}`).flex_1().min_h(0).px(10).pt(8).pb(12).gap(12)
-    .when(view.tab !== "worktrees", (element) => element.overflow_y_scrollbar())
+    .when(!TABS_WITHOUT_OUTER_SCROLL.has(view.tab), (element) => element.overflow_y_scrollbar())
     .when(Boolean(banner), (element) => element.child(noticePanel(banner)))
     .children(tabBody(view));
   return v_flex().id("herdwatch-console").size_full().bg(TOKYO_NIGHT.background).font_family(monospaceFont).text_size(CONSOLE_TEXT_SIZE_PX).text_color(TOKYO_NIGHT.foreground)

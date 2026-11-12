@@ -7,7 +7,9 @@ export const SETTINGS = {
   stale_seconds: 30,
   worktree_interval: 300,
   worktree_timeout: 120,
+  docker_interval: 300,
   alerts: true,
+  docker: true,
 };
 
 export function worktreeItem(overrides = {}) {
@@ -22,6 +24,11 @@ export function worktreeItem(overrides = {}) {
     behind: 0,
     last_commit_at: 0,
     absolute_path: "/home/dev/code/shop",
+    created_at: 800,
+    last_activity_at: 900,
+    merged_into: "",
+    common_dir: "/home/dev/code/main/.git",
+    default_branch: "main",
     ...overrides,
   };
 }
@@ -36,8 +43,20 @@ export function agentProcess(overrides = {}) {
     cwd: "/home/dev/code/shop",
     branch: "main",
     repository: "shop",
+    tree_cpu: 30,
+    tree_rss_kb: 2097152,
+    tree_count: 3,
+    tree_names: "claude, node, esbuild",
     ...overrides,
   };
+}
+
+export function listeningPort(overrides = {}) {
+  return { port: 3000, pid: 4200, process: "next-server", agent_pid: 4100, pinned: false, listening: true, ...overrides };
+}
+
+export function hostDocker(overrides = {}) {
+  return { state: "ok", measured_at: 900, reason: "", error: "", total_kb: 2048, reclaimable_kb: 1024, containers: [], images: [], volumes: [], ...overrides };
 }
 
 export function hostSnapshot(overrides = {}) {
@@ -45,12 +64,15 @@ export function hostSnapshot(overrides = {}) {
     label: "devbox",
     target: "dev@devbox.lan",
     state: "ok",
-    error: "",
+    reason: "",
+    detail: "",
     os: "linux",
     load: "0.10 0.20 0.30",
     home: "/home/dev",
     polled_at: 1000,
     updated_at: 1000,
+    down_since: null,
+    rtt_ms: 42,
     ncpu: 8,
     uptime_seconds: 3600,
     cpu_pct: 40,
@@ -71,23 +93,29 @@ export function hostSnapshot(overrides = {}) {
     net_tx_rate: 250,
     cores: [30, 50],
     gpu: null,
+    problems: [],
     processes: [],
     agents: [],
     ports: [],
-    worktrees: { state: "ok", measured_at: 900, error: "", total_kb: 1024, items: [worktreeItem()] },
+    worktrees: { state: "ok", measured_at: 900, reason: "", error: "", total_kb: 1024, items: [worktreeItem()] },
+    docker: hostDocker(),
     ...overrides,
   };
 }
 
 export function snapshot(overrides = {}) {
   return {
-    version: 2,
+    version: 3,
     generated_at: 1000,
     hosts_file: "/home/dev/.config/herdwatch/hosts.conf",
     settings_file: "/home/dev/.config/herdwatch/settings.conf",
+    pins_file: "/home/dev/.config/herdwatch/pins.conf",
     settings: SETTINGS,
     hosts: [hostSnapshot()],
     worktrees_due: false,
+    docker_due: false,
+    collector: { state: "ran", busy_since: null },
+    problems: [],
     alerts: [],
     ...overrides,
   };

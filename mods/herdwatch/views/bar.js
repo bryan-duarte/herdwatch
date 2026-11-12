@@ -1,5 +1,6 @@
 import { div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
+import { backendGuidance, hostFailureGuidance } from "../failure-guidance.js";
 import { percentText } from "../format.js";
 import { isStale, percentLevel } from "../health.js";
 import { GRADIENTS, TOKYO_NIGHT, levelColor } from "../palette.js";
@@ -19,6 +20,7 @@ const PILL_RADIUS_PX = 7;
 const BAR_TEXT_SIZE_PX = 11.5;
 const TOGGLE_ICON_SIZE_PX = 15;
 const SEGMENT_DIVIDER = "│";
+const FAILED_POLL_MARK = "!";
 const CONSOLE_OPEN_ICON = "mods/herdwatch/icons/console-open.svg";
 const CONSOLE_CLOSED_ICON = "mods/herdwatch/icons/console-closed.svg";
 /** @type {Record<PercentLevel, string>} */
@@ -51,10 +53,11 @@ function reading(glyph, percent, gradient, settings) {
  * @param {MonitorSettings} settings
  */
 function hostSegment(host, settings) {
-  const segment = h_flex().flex_none().gap(5).items_center().child(text(host.label, TOKYO_NIGHT.blue).font_semibold());
+  const segment = h_flex().id(`pill-host-${host.label}`).flex_none().gap(5).items_center().child(text(host.label, TOKYO_NIGHT.blue).font_semibold());
+  if (host.state === "pending") return segment.child(text(UNREACHABLE_MARKS.pending.mark, UNREACHABLE_MARKS.pending.color));
   if (host.state !== "ok") {
     const { mark, color } = UNREACHABLE_MARKS[host.state];
-    return segment.child(text(mark, color));
+    return segment.tooltip(`${host.label}: ${hostFailureGuidance(host, settings).summary}`).child(text(mark, color));
   }
   return segment
     .child(reading("cpu", host.cpu_pct, GRADIENTS.cpu, settings))
@@ -62,16 +65,27 @@ function hostSegment(host, settings) {
     .when(isStale(host, settings), (element) => element.child(text("?", TOKYO_NIGHT.comment)));
 }
 
+/**
+ * The mark of a failed poll, also next to an older snapshot, with the reason in its tooltip.
+ * @param {MonitorState} monitorState
+ */
+function failedPollMark(monitorState) {
+  const { summary, nextStep } = backendGuidance(monitorState.error);
+  return h_flex().id("pill-failed-poll").flex_none().tooltip(`${summary} ${nextStep}`).child(text(FAILED_POLL_MARK, TOKYO_NIGHT.red).font_semibold());
+}
+
 /** @param {MonitorState | null} monitorState */
 function pillContent(monitorState) {
   const snapshot = monitorState?.snapshot;
-  if (monitorState?.error && !snapshot) return [text("herdwatch: error", TOKYO_NIGHT.red)];
+  const failedPoll = monitorState?.error ? [failedPollMark(monitorState)] : [];
+  if (monitorState?.error && !snapshot) return [text("herdwatch: error", TOKYO_NIGHT.red), ...failedPoll];
   if (!snapshot) return [text("herdwatch …", TOKYO_NIGHT.comment)];
   if (snapshot.hosts.length === 0) return [text("herdwatch: add hosts", TOKYO_NIGHT.dim)];
-  return snapshot.hosts.flatMap((host, index) => [
+  const segments = snapshot.hosts.flatMap((host, index) => [
     ...(index > 0 ? [text(SEGMENT_DIVIDER, TOKYO_NIGHT.border)] : []),
     hostSegment(host, snapshot.settings),
   ]);
+  return [...segments, ...failedPoll];
 }
 
 /** @param {BarView} view */
