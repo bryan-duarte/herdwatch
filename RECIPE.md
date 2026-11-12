@@ -1,6 +1,6 @@
 # Herdwatch - SSH server monitor for coding agents
 
-A btop and htop style system monitor for remote servers, VPS and homelab machines where AI agents like Claude Code and Codex run. A pill in the tab row shows each host's CPU; a click or `cmd-shift-m` opens a Tokyo Night dashboard: CPU, memory (RAM), swap, disk, network and GPU charts, per-core load, agent sessions and their state, listening ports, git worktree disk usage, top processes and hot host alerts. A multi-host SSH monitor and resource monitor, with nothing to install on the server.
+Your coding agents run on remote servers, and you cannot see what they do there. Herdwatch shows every SSH host inside Herdr. A pill in the tab row shows each host's CPU. A click opens a btop-style system monitor: CPU, memory, disk, network and GPU history, top processes, the Claude Code, Codex and other agents that run and which ones need you, the ports they leave open, and the git worktrees that fill the disk. For any server, VPS or homelab. Nothing to install on the server.
 
 ![Herdwatch - SSH server monitor for coding agents](preview.png)
 

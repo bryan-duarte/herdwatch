@@ -2,9 +2,13 @@
 
 # Herdwatch
 
-An SSH hosts monitor for [Herdr](https://herdr.dev). It shows the CPU, memory, disk, worktrees, processes and coding agents of every machine your agents run on, without leaving Herdr.
+Your coding agents run on remote machines. From Herdr you cannot see if a host is out of memory, which agent waits for you, which dev server still holds a port, or how much disk the old worktrees take.
 
-Herdwatch is a Herdr.app mod: JavaScript for the panel, Bash and POSIX `sh` for the polling. It needs no daemon on your hosts and nothing to install on them. It uses `ssh` and the tools that are already there.
+Herdwatch shows all of this for every SSH host, in one console inside [Herdr](https://herdr.dev). A pill in the tab row gives the CPU of each host at a glance.
+
+Your hosts need no daemon and no install. Herdwatch uses `ssh` and the tools that are already there.
+
+It is a Herdr.app mod: JavaScript for the panel, Bash and POSIX `sh` for the polling.
 
 ## Install
 
