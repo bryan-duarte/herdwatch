@@ -51,7 +51,7 @@ export const FAILURE_GUIDANCE = {
   }),
   tailscale_check: ({ label, target }) => ({
     summary: `Tailscale SSH asks for a browser check before it lets Herdwatch into ${label}.`,
-    nextStep: `Run ssh ${target} in a terminal and finish the check.`,
+    nextStep: `Run ssh ${target} once in a terminal and finish the check in the browser.`,
   }),
   login: ({ label, target }) => ({
     summary: `${label} refused the SSH login.`,
