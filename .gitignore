@@ -1,5 +1,25 @@
+# Planning notes stay local
+docs/plans/
+
+# Herdr.app writes these into every mod folder
+mods/*/gpui-kit.d.ts
+mods/*/herdr.d.ts
+
+# Local agent and editor settings
+.claude/
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS files
 .DS_Store
+
+# Logs, scratch output, secrets
+*.log
 *.tmp
 *.raw
 *.err
-mods/herdwatch/gpui-kit.d.ts
+.env
+.env.*
+node_modules/
