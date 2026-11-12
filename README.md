@@ -32,7 +32,7 @@ The pictures use sample hosts and numbers.
 
 <p><img src="assets/card-actions.png" alt="The Remove worktree dialog over the worktrees view, with the option to delete the branch" width="100%"></p>
 
-<p><img src="assets/card-errors.png" alt="A host that is down, with the reason, the next step and two bad config lines" width="100%"></p>
+<p><img src="assets/card-errors.png" alt="kali needs a login again: the console names the Tailscale SSH check and says to run ssh kali, and a terminal shows that command" width="100%"></p>
 
 ## Install
 
