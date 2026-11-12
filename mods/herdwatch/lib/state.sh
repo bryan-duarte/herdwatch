@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 LOG_MAX_BYTES=262144
 LOG_BYTES_KEPT_AFTER_TRIM=$((LOG_MAX_BYTES / 2))
 

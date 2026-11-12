@@ -1,4 +1,6 @@
 /** @typedef {import("gpui-kit").Color} Color */
+/** @typedef {import("./schemas.js").HostHealth} HostHealth */
+/** @typedef {import("./schemas.js").PercentLevel} PercentLevel */
 
 export const TOKYO_NIGHT = /** @type {const} */ ({
   background: "#1a1b26",
@@ -30,7 +32,7 @@ export const GRADIENTS = /** @type {const} */ ({
 });
 
 /** @type {Record<string, Color>} */
-export const TOOL_COLORS = {
+const TOOL_COLORS = {
   claude: TOKYO_NIGHT.orange,
   codex: TOKYO_NIGHT.green,
   cursor: TOKYO_NIGHT.blue,
@@ -45,13 +47,36 @@ const TOOL_ACCENTS = [TOKYO_NIGHT.blue, TOKYO_NIGHT.cyan, TOKYO_NIGHT.teal, TOKY
   TOKYO_NIGHT.orange, TOKYO_NIGHT.magenta, TOKYO_NIGHT.purple];
 
 /**
- * A fixed color per agent or worktree tool. A tool without its own color always gets the same accent from its name.
+ * A tool without its own color gets an accent picked from its name, so it keeps the same color on every poll.
  * @param {string} tool
  */
 export function toolColor(tool) {
-  if (Object.hasOwn(TOOL_COLORS, tool)) return TOOL_COLORS[/** @type {keyof typeof TOOL_COLORS} */ (tool)];
+  if (Object.hasOwn(TOOL_COLORS, tool)) return TOOL_COLORS[tool];
   const nameSum = [...tool].reduce((sum, character) => sum + character.charCodeAt(0), 0);
   return TOOL_ACCENTS[nameSum % TOOL_ACCENTS.length];
+}
+
+/** @type {Record<HostHealth, Color>} */
+const HEALTH_COLORS = {
+  down: TOKYO_NIGHT.red,
+  auth: TOKYO_NIGHT.yellow,
+  pending: TOKYO_NIGHT.comment,
+  critical: TOKYO_NIGHT.red,
+  warning: TOKYO_NIGHT.yellow,
+  normal: TOKYO_NIGHT.green,
+};
+
+/** @param {HostHealth} health */
+export const healthColor = (health) => HEALTH_COLORS[health];
+
+/**
+ * @param {PercentLevel} level
+ * @param {Color} normalColor
+ * @returns {Color}
+ */
+export function levelColor(level, normalColor = TOKYO_NIGHT.foreground) {
+  if (level === "normal") return normalColor;
+  return HEALTH_COLORS[level];
 }
 
 const HEX_RADIX = 16;

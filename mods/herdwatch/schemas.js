@@ -1,13 +1,16 @@
 /**
+ * @typedef {import("gpui-kit").Context} ModContext
+ * @typedef {import("gpui-kit").Element} Element
+ * @typedef {import("gpui-kit").Color} Color
+ * @typedef {Record<string, Color>} ThemeColors
+ *
  * @typedef {"ok" | "down" | "auth" | "pending"} HostState
  * @typedef {"normal" | "warning" | "critical"} PercentLevel
+ * @typedef {Exclude<HostState, "ok"> | PercentLevel} HostHealth
  * @typedef {"working" | "blocked" | "idle" | "done"} AgentState
  * @typedef {"overview" | "agents" | "ports" | "worktrees" | "procs"} ConsoleTab
  * @typedef {"all" | "stale" | "changed" | "agent" | "behind"} WorktreeFilter
- * @typedef {Record<string, import("gpui-kit").Color>} ThemeColors
- * @typedef {import("gpui-kit").Context} ModContext
  * @typedef {"cpu" | "mem"} ProcessSort
- * @typedef {import("gpui-kit").Element} Element
  *
  * @typedef {object} ProcessRow
  * @property {number | null} pid
@@ -119,11 +122,12 @@
  * @property {boolean} worktrees_due
  * @property {HotHostAlert[]} alerts
  *
+ * @typedef {{ ok: true, snapshot: Snapshot } | { ok: false, error: string }} SnapshotResult
+ * @typedef {{ ok: true } | { ok: false, error: string }} BackendRunResult
+ *
  * @typedef {object} MonitorState
  * @property {Snapshot | null} snapshot
  * @property {string | null} error
- *
- * @typedef {{ ok: true, snapshot: Snapshot } | { ok: false, error: string }} SnapshotResult
  *
  * @typedef {object} HostSeries
  * @property {number[]} at
@@ -138,6 +142,11 @@
  * @property {"start" | "done" | "alert"} kind
  * @property {string} text
  *
+ * @typedef {object} ChartMarker
+ * @property {number} position
+ * @property {HostEvent["kind"]} kind
+ * @property {string} text
+ *
  * @typedef {object} MonitorHistory
  * @property {Record<string, HostSeries>} hosts
  * @property {Record<string, (number | null)[]>} agents
@@ -146,10 +155,32 @@
  *
  * @typedef {Record<string, HostWorktrees>} WorktreesByHost
  *
+ * @typedef {object} PollLease
+ * @property {string} owner
+ * @property {number} at
+ *
+ * @typedef {object} HerdrAgent
+ * @property {string | null} machine
+ * @property {string} app
+ * @property {string} cwd
+ * @property {AgentState} state
+ *
  * @typedef {object} AgentView
  * @property {AgentProcess} process
  * @property {AgentState} state
  * @property {(number | null)[]} cpuHistory
+ *
+ * @typedef {object} ConsoleChoices
+ * @property {string | null} host
+ * @property {ConsoleTab} tab
+ * @property {number} range
+ * @property {WorktreeFilter} filter
+ *
+ * @typedef {object} BarView
+ * @property {MonitorState | null} monitorState
+ * @property {boolean} isConsoleOpen
+ * @property {string | null} shortcut
+ * @property {() => void} onToggleConsole
  *
  * @typedef {object} ConsoleView
  * @property {MonitorState | null} monitorState
@@ -163,7 +194,7 @@
  * @property {WorktreeFilter} worktreeFilter
  * @property {string | null} shortcut
  * @property {boolean} hasKeyboard
- * @property {number} width
+ * @property {boolean} isWide
  * @property {(label: string) => void} onHost
  * @property {(tab: ConsoleTab) => void} onTab
  * @property {(samples: number) => void} onRange

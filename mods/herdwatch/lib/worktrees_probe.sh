@@ -1,14 +1,16 @@
+# shellcheck shell=sh
 # herdwatch worktree probe v2. The collector sends this file over ssh stdin: sh -s -- <max_depth> <root>...
-# It finds git linked worktrees by git's own records, so the tool that made them does not matter:
-# a linked worktree has a ".git" file "gitdir: <repo>/.git/worktrees/<name>", and the main
-# repository lists each one in "<repo>/.git/worktrees/<name>/gitdir".
-# Row: size_kb, tool, repository, branch, path (~), changed files, ahead, behind, last commit (epoch), absolute path.
+# Output: "worktrees=1", "--worktrees--", then one row per linked worktree: size_kb, tool, repository, branch,
+# path (~), changed files, ahead, behind, last commit (epoch), absolute path.
+# A linked worktree has a ".git" file "gitdir: <repo>/.git/worktrees/<name>", and the main repository lists each
+# one in "<repo>/.git/worktrees/<name>/gitdir", so the tool that made a worktree does not matter.
 LC_ALL=C
 export LC_ALL
 default_max_depth=7
 max_depth="${1:-$default_max_depth}"
 [ "$#" -gt 0 ] && shift
 [ "$#" -gt 0 ] || set -- "$HOME"
+tab=$(printf '\t')
 candidates=$(mktemp)
 
 absolute_dir() {
@@ -52,6 +54,19 @@ find_git_entries() {
     -o -name .cargo -o -name .rustup -o -name .gradle -o -name .m2 -o -name .venv -o -name venv \
     -o -name __pycache__ -o -name site-packages -o -name .Trash -o -name .docker -o -name snap \) -prune \
     -o \( -name .git -type d -print -prune \) -o \( -name .git -type f -print \) 2>/dev/null
+}
+
+collect_candidates() {
+  for root in "$@"; do
+    [ -d "$root" ] || continue
+    find_git_entries "$root" | while IFS= read -r git_entry; do
+      if [ -d "$git_entry" ]; then
+        add_worktrees_from_registry "$git_entry"
+      else
+        add_worktree_from_git_file "$git_entry"
+      fi
+    done
+  done
 }
 
 branch_of() {
@@ -105,17 +120,6 @@ home_relative() {
   esac
 }
 
-for root in "$@"; do
-  [ -d "$root" ] || continue
-  find_git_entries "$root" | while IFS= read -r git_entry; do
-    if [ -d "$git_entry" ]; then
-      add_worktrees_from_registry "$git_entry"
-    else
-      add_worktree_from_git_file "$git_entry"
-    fi
-  done
-done
-
 worktree_health() {
   status_output=$(git -C "$1" status --porcelain=v2 --branch --ignore-submodules 2>/dev/null)
   changed_files=$(printf '%s\n' "$status_output" | grep -c -v '^#')
@@ -124,12 +128,17 @@ worktree_health() {
   printf '%s\t%s\t%s' "$changed_files" "${ahead_behind:-0	0}" "${last_commit:-0}"
 }
 
+print_worktree_rows() {
+  sort -u -t "$tab" -k1,1 "$candidates" | while IFS="$tab" read -r worktree_dir admin_dir; do
+    size_kb=$(du -sk "$worktree_dir" 2>/dev/null | cut -f1)
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "${size_kb:-0}" "$(tool_of "$worktree_dir")" "$(repository_of "$admin_dir")" \
+      "$(branch_of "$admin_dir")" "$(home_relative "$worktree_dir")" "$(worktree_health "$worktree_dir")" "$worktree_dir"
+  done
+}
+
+collect_candidates "$@"
 echo "worktrees=1"
 echo "--worktrees--"
-sort -u -t "$(printf '\t')" -k1,1 "$candidates" | while IFS="$(printf '\t')" read -r worktree_dir admin_dir; do
-  size_kb=$(du -sk "$worktree_dir" 2>/dev/null | cut -f1)
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "${size_kb:-0}" "$(tool_of "$worktree_dir")" "$(repository_of "$admin_dir")" \
-    "$(branch_of "$admin_dir")" "$(home_relative "$worktree_dir")" "$(worktree_health "$worktree_dir")" "$worktree_dir"
-done
+print_worktree_rows
 rm -f "$candidates"
 exit 0

@@ -1,5 +1,8 @@
+# shellcheck shell=bash
+RECORD_PROCESS_NAME_COLUMN=5
+
 herdwatch_top_process_name() {
-  herdwatch_record_processes "$1" | awk -F '\t' 'NR == 1 { print $5 }'
+  herdwatch_record_processes "$1" | awk -F '\t' -v name_column="$RECORD_PROCESS_NAME_COLUMN" 'NR == 1 { print $name_column }'
 }
 
 herdwatch_alert_outbox() {

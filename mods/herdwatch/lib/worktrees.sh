@@ -1,8 +1,15 @@
+# shellcheck shell=bash
 WORKTREES_SECTION="[worktrees]"
+WORKTREE_PROBE_FORMAT_LINE="worktrees=1"
+WORKTREE_PROBE_ROWS_MARKER="--worktrees--"
 WORKTREE_LOCK_MARGIN_SECONDS=30
 
 herdwatch_worktrees_file() {
   printf '%s/hosts/%s.worktrees' "$STATE_DIR" "$1"
+}
+
+herdwatch_worktree_rows() {
+  sed -n "/^\\$WORKTREES_SECTION\$/,\$p" "$1" | tail -n +2
 }
 
 herdwatch_worktrees_measured_at() {
@@ -26,7 +33,7 @@ herdwatch_store_worktrees() {
   local worktrees_file="$1" measured_at="$2" probe_output="$3"
   {
     printf 'state=ok\nmeasured_at=%s\nerror=\n%s\n' "$measured_at" "$WORKTREES_SECTION"
-    sed -n '/^--worktrees--$/,$p' "$probe_output" | tail -n +2 | LC_ALL=C tr -cd '[:print:]\t\n'
+    sed -n "/^$WORKTREE_PROBE_ROWS_MARKER\$/,\$p" "$probe_output" | tail -n +2 | LC_ALL=C tr -cd '[:print:]\t\n'
   } >"$worktrees_file.$$.tmp"
   mv "$worktrees_file.$$.tmp" "$worktrees_file"
 }
@@ -38,7 +45,7 @@ herdwatch_mark_worktrees_failed() {
   {
     printf 'state=failed\nmeasured_at=%s\nerror=%s\n%s\n' "$measured_at" "$error_message" "$WORKTREES_SECTION"
     if [ -r "$worktrees_file" ]; then
-      sed -n "/^\\$WORKTREES_SECTION\$/,\$p" "$worktrees_file" | tail -n +2
+      herdwatch_worktree_rows "$worktrees_file"
     fi
   } >"$worktrees_file.$$.tmp"
   mv "$worktrees_file.$$.tmp" "$worktrees_file"
@@ -51,7 +58,7 @@ herdwatch_measure_host_worktrees() {
   worktrees_file=$(herdwatch_worktrees_file "$label")
   herdwatch_run_remote_script "$target" "$HERDWATCH_ROOT/lib/worktrees_probe.sh" \
     "sh -s -- $WORKTREE_DEPTH $WORKTREE_ROOTS" "$WORKTREE_TIMEOUT" "$probe_output" "$stderr_file" &&
-    grep -q '^worktrees=1$' "$probe_output" && measurement_succeeded=true
+    grep -qx "$WORKTREE_PROBE_FORMAT_LINE" "$probe_output" && measurement_succeeded=true
   measured_at=$(date +%s)
   if [ "$measurement_succeeded" = true ]; then
     herdwatch_store_worktrees "$worktrees_file" "$measured_at" "$probe_output"

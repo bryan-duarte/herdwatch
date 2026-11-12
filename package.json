@@ -1,0 +1,11 @@
+{
+  "name": "herdwatch",
+  "private": true,
+  "type": "module",
+  "description": "Development checks for the Herdwatch mod. The mod itself has no build step and no dependencies.",
+  "scripts": {
+    "test": "node --import ./tests/register.js --test 'tests/**/*.test.js'",
+    "typecheck": "tsc -p mods/herdwatch/jsconfig.json",
+    "lint:shell": "shellcheck mods/herdwatch/bin/herdwatch mods/herdwatch/lib/*.sh mods/herdwatch/lib/probe/*.sh"
+  }
+}

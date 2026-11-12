@@ -1,23 +1,25 @@
 import { Background, PathBuilder, div } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { TOKYO_NIGHT, gradientAt } from "./palette.js";
+import { GRADIENTS, TOKYO_NIGHT, gradientAt } from "../palette.js";
 
 /** @typedef {import("gpui-kit").Color} Color */
 
 const PERCENT_SCALE = 100;
-const GRID_FRACTIONS = [25, 50, 75];
+const GRID_LINE_PERCENTS = [25, 50, 75];
 const AREA_OPACITY = 0.32;
+const SPARKLINE_AREA_OPACITY = 0.16;
 const LINE_WIDTH_PX = 1.5;
 const SECOND_LINE_WIDTH_PX = 1.3;
 const SECOND_LINE_DASH = [3, 2];
 const END_DOT_SIZE_PX = 5;
 const MARKER_SIZE_PX = 6;
+const MARKER_LINE_OPACITY = 0.55;
 const CORE_CELL_HEIGHT_PX = 14;
 const CORE_MIN_OPACITY = 0.35;
 const VERTICAL_GRADIENT_ANGLE = 0;
 
 /**
- * @typedef {object} ChartMarker
+ * @typedef {object} ChartMarkerLook
  * @property {number} position   0..1 across the chart
  * @property {Color} color
  * @property {string} text
@@ -31,50 +33,58 @@ const VERTICAL_GRADIENT_ANGLE = 0;
  * @property {number} [maximum]
  * @property {(number | null)[] | null} [secondLine]
  * @property {Color} [secondLineColor]
- * @property {ChartMarker[]} [markers]
+ * @property {ChartMarkerLook[]} [markers]
  * @property {boolean} [grid]
  */
+
+/** @typedef {{ index: number, sample: number }} ChartPoint */
 
 /** @param {number} index @param {number} count */
 const xPercent = (index, count) => (count > 1 ? (index / (count - 1)) * PERCENT_SCALE : 0);
 
-/** @param {number | null} value @param {number} maximum */
-const yPercent = (value, maximum) => PERCENT_SCALE - (Math.min(Math.max(value ?? 0, 0), maximum) / maximum) * PERCENT_SCALE;
+/** @param {number | null} sample @param {number} maximum */
+const yPercent = (sample, maximum) => PERCENT_SCALE - (Math.min(Math.max(sample ?? 0, 0), maximum) / maximum) * PERCENT_SCALE;
 
-/** @param {number} value */
-const percentCoordinate = (value) => /** @type {`${number}%`} */ (`${value.toFixed(2)}%`);
+/** @param {number} percent */
+const percentCoordinate = (percent) => /** @type {`${number}%`} */ (`${percent.toFixed(2)}%`);
 
 /**
- * Splits samples into runs without nulls, so a host that was down leaves a gap.
+ * Splits samples into runs without nulls, so a host that was down leaves a gap in the line.
  * @param {(number | null)[]} samples
- * @returns {{ index: number, value: number }[][]}
+ * @returns {ChartPoint[][]}
  */
-function runs(samples) {
-  /** @type {{ index: number, value: number }[][]} */
-  const result = [];
-  /** @type {{ index: number, value: number }[]} */
-  let current = [];
-  samples.forEach((value, index) => {
-    if (Number.isFinite(value)) {
-      current.push({ index, value });
+function unbrokenRuns(samples) {
+  /** @type {ChartPoint[][]} */
+  const runs = [];
+  /** @type {ChartPoint[]} */
+  let currentRun = [];
+  samples.forEach((sample, index) => {
+    if (Number.isFinite(sample)) {
+      currentRun.push({ index, sample });
       return;
     }
-    if (current.length) result.push(current);
-    current = [];
+    if (currentRun.length) runs.push(currentRun);
+    currentRun = [];
   });
-  if (current.length) result.push(current);
-  return result;
+  if (currentRun.length) runs.push(currentRun);
+  return runs;
 }
+
+/** @param {(number | null)[]} samples */
+const drawableRuns = (samples) => unbrokenRuns(samples).filter((run) => run.length > 1);
+
+/** @param {(number | null)[]} samples */
+const hasLine = (samples) => drawableRuns(samples).length > 0;
 
 /** @param {(number | null)[]} samples @param {number} maximum */
 function areaPath(samples, maximum) {
   const builder = PathBuilder.fill();
   const count = samples.length;
-  runs(samples).filter((run) => run.length > 1).forEach((run) => {
+  for (const run of drawableRuns(samples)) {
     builder.move_to(percentCoordinate(xPercent(run[0].index, count)), "100%");
-    run.forEach((point) => builder.line_to(percentCoordinate(xPercent(point.index, count)), percentCoordinate(yPercent(point.value, maximum))));
+    run.forEach((point) => builder.line_to(percentCoordinate(xPercent(point.index, count)), percentCoordinate(yPercent(point.sample, maximum))));
     builder.line_to(percentCoordinate(xPercent(run[run.length - 1].index, count)), "100%").close();
-  });
+  }
   return builder.build();
 }
 
@@ -83,14 +93,14 @@ function linePath(samples, maximum, widthPx, dash = null) {
   const builder = PathBuilder.stroke(widthPx);
   if (dash) builder.dash_array(dash);
   const count = samples.length;
-  runs(samples).filter((run) => run.length > 1).forEach((run) => {
+  for (const run of drawableRuns(samples)) {
     run.forEach((point, position) => {
       const x = percentCoordinate(xPercent(point.index, count));
-      const y = percentCoordinate(yPercent(point.value, maximum));
+      const y = percentCoordinate(yPercent(point.sample, maximum));
       if (position === 0) builder.move_to(x, y);
       else builder.line_to(x, y);
     });
-  });
+  }
   return builder.build();
 }
 
@@ -98,15 +108,25 @@ function linePath(samples, maximum, widthPx, dash = null) {
 const verticalGradient = (gradient, opacity) =>
   Background.linear_gradient(VERTICAL_GRADIENT_ANGLE, Background.stop(gradient[0], 0), Background.stop(gradient[gradient.length - 1], PERCENT_SCALE)).opacity(opacity);
 
-/** @param {(number | null)[]} samples */
-const hasLine = (samples) => runs(samples).some((run) => run.length > 1);
-
-/** @param {ChartMarker} marker */
+/** @param {ChartMarkerLook} marker */
 function markerElement(marker) {
   const left = percentCoordinate(marker.position * PERCENT_SCALE);
-  return div().absolute().top(0).bottom(0).left(left).w(1).bg(marker.color).opacity(0.55)
-    .child(div().absolute().top(0).left(-MARKER_SIZE_PX / 2).size(MARKER_SIZE_PX).rounded(1).bg(marker.color));
+  return div().absolute().top(0).bottom(0).left(left).w(1).bg(marker.color).opacity(MARKER_LINE_OPACITY)
+    .child(div().absolute().top(0).left(-MARKER_SIZE_PX / 2).size(MARKER_SIZE_PX).rounded(1).bg(marker.color))
+    .tooltip(marker.text);
 }
+
+/** @param {(number | null)[]} samples @param {number} maximum @param {readonly Color[]} gradient */
+function endDot(samples, maximum, gradient) {
+  const lastIndex = samples.length - 1;
+  const lastSample = samples[lastIndex];
+  return div().absolute().size(END_DOT_SIZE_PX).rounded(END_DOT_SIZE_PX)
+    .left(percentCoordinate(xPercent(lastIndex, samples.length))).top(percentCoordinate(yPercent(lastSample, maximum)))
+    .ml(-END_DOT_SIZE_PX).mt(-END_DOT_SIZE_PX / 2).bg(gradientAt(gradient, Math.min(lastSample, maximum) / maximum));
+}
+
+/** @param {number} percent */
+const gridLine = (percent) => div().absolute().left(0).right(0).top(`${percent}%`).h(1).bg(TOKYO_NIGHT.highlight);
 
 /**
  * A btop history chart: gradient area, a gradient line, an optional dashed second line, event markers and an end dot.
@@ -114,7 +134,7 @@ function markerElement(marker) {
  */
 export function areaChart({ samples, heightPx, gradient, maximum = PERCENT_SCALE, secondLine = null, secondLineColor = TOKYO_NIGHT.purple, markers = [], grid = true }) {
   const chart = div().relative().w_full().h(heightPx).rounded(3).bg(TOKYO_NIGHT.backgroundDark).overflow_hidden();
-  if (grid) GRID_FRACTIONS.forEach((fraction) => chart.child(div().absolute().left(0).right(0).top(`${fraction}%`).h(1).bg(TOKYO_NIGHT.highlight)));
+  if (grid) GRID_LINE_PERCENTS.forEach((percent) => chart.child(gridLine(percent)));
   if (hasLine(samples)) {
     chart.child(window.paint_path(areaPath(samples, maximum), verticalGradient(gradient, AREA_OPACITY)).absolute().size_full());
     chart.child(window.paint_path(linePath(samples, maximum, LINE_WIDTH_PX), verticalGradient(gradient, 1)).absolute().size_full());
@@ -122,14 +142,8 @@ export function areaChart({ samples, heightPx, gradient, maximum = PERCENT_SCALE
   if (secondLine && hasLine(secondLine)) {
     chart.child(window.paint_path(linePath(secondLine, maximum, SECOND_LINE_WIDTH_PX, SECOND_LINE_DASH), secondLineColor).absolute().size_full());
   }
-  markers.forEach((marker) => chart.child(markerElement(marker).tooltip(marker.text)));
-  const lastIndex = samples.length - 1;
-  const lastValue = samples[lastIndex];
-  if (Number.isFinite(lastValue)) {
-    chart.child(div().absolute().size(END_DOT_SIZE_PX).rounded(END_DOT_SIZE_PX)
-      .left(percentCoordinate(xPercent(lastIndex, samples.length))).top(percentCoordinate(yPercent(lastValue, maximum)))
-      .ml(-END_DOT_SIZE_PX).mt(-END_DOT_SIZE_PX / 2).bg(gradientAt(gradient, Math.min(lastValue, maximum) / maximum)));
-  }
+  markers.forEach((marker) => chart.child(markerElement(marker)));
+  if (Number.isFinite(samples[samples.length - 1])) chart.child(endDot(samples, maximum, gradient));
   return chart;
 }
 
@@ -137,15 +151,14 @@ export function areaChart({ samples, heightPx, gradient, maximum = PERCENT_SCALE
  * A small filled line for a table cell.
  * @param {(number | null)[]} samples
  * @param {Color} color
- * @param {number} widthPx
- * @param {number} heightPx
+ * @param {{ widthPx: number, heightPx: number }} size
  * @param {number} maximum
  */
-export function sparkline(samples, color, widthPx, heightPx, maximum = PERCENT_SCALE) {
+export function sparkline(samples, color, { widthPx, heightPx }, maximum = PERCENT_SCALE) {
   const chart = div().relative().w(widthPx).h(heightPx).flex_none();
   if (!hasLine(samples)) return chart;
   return chart
-    .child(window.paint_path(areaPath(samples, maximum), Background.solid(color).opacity(0.16)).absolute().size_full())
+    .child(window.paint_path(areaPath(samples, maximum), Background.solid(color).opacity(SPARKLINE_AREA_OPACITY)).absolute().size_full())
     .child(window.paint_path(linePath(samples, maximum, SECOND_LINE_WIDTH_PX), color).absolute().size_full());
 }
 
@@ -155,10 +168,11 @@ export function sparkline(samples, color, widthPx, heightPx, maximum = PERCENT_S
  * @param {number} cellWidthPx
  */
 export function coreStrip(cores, cellWidthPx) {
-  return h_flex().gap(2).flex_wrap().children(cores.map((value, index) => {
-    const load = Number.isFinite(value) ? Math.min(value, PERCENT_SCALE) : 0;
+  return h_flex().gap(2).flex_wrap().children(cores.map((corePercent, index) => {
+    const load = Number.isFinite(corePercent) ? Math.min(corePercent, PERCENT_SCALE) : 0;
+    const loadShare = load / PERCENT_SCALE;
     return div().w(cellWidthPx).h(CORE_CELL_HEIGHT_PX).rounded(2).tooltip(`core ${index}: ${Math.round(load)}%`)
-      .bg(gradientAt([TOKYO_NIGHT.green, TOKYO_NIGHT.yellow, TOKYO_NIGHT.red], load / PERCENT_SCALE))
-      .opacity(CORE_MIN_OPACITY + (1 - CORE_MIN_OPACITY) * (load / PERCENT_SCALE));
+      .bg(gradientAt(GRADIENTS.cpu, loadShare))
+      .opacity(CORE_MIN_OPACITY + (1 - CORE_MIN_OPACITY) * loadShare);
   }));
 }

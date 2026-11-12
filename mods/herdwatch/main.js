@@ -1,288 +1,88 @@
 import { View } from "gpui-kit";
-import { appHome, exec, focused, keys, nextCommand, notify, panes, playSound, props, run, setShared, shared, theme, window as herdrWindow } from "herdr";
+import { nextCommand, theme } from "herdr";
 import { agentViews, herdrAgents } from "./agents.js";
-import { renderBar } from "./bar.js";
-import { renderConsole } from "./console.js";
-import { nowInSeconds } from "./format.js";
-import { historyOrEmpty, nextHistory } from "./history.js";
-import { isPollLeaseHeldByAnotherCopy, monitorStateOrNull, parseSnapshot, worktreesOrEmpty } from "./snapshot.js";
+import { closeConsole, isConsoleCopy, isConsoleOpenInFocusedTab, toggleConsole, toggleShortcutLabel } from "./console-pane.js";
+import { FOCUS_COMMAND, MONOSPACE_FONT, TOGGLE_COMMAND } from "./mod.js";
+import { Poller } from "./poller.js";
+import { loadConsoleChoices, readHistory, readMonitorState, readSort, readWorktrees, saveConsoleChoices, saveSort } from "./store.js";
+import { renderBar } from "./views/bar.js";
+import { renderConsole } from "./views/console.js";
 
-/** @typedef {import("./types.js").HotHostAlert} HotHostAlert */
-/** @typedef {import("./types.js").MonitorState} MonitorState */
-/** @typedef {import("./types.js").MonitorHistory} MonitorHistory */
-/** @typedef {import("./types.js").ProcessSort} ProcessSort */
-/** @typedef {import("./types.js").ConsoleTab} ConsoleTab */
-/** @typedef {import("./types.js").WorktreeFilter} WorktreeFilter */
-/** @typedef {import("./types.js").WorktreesByHost} WorktreesByHost */
-/** @typedef {import("./types.js").Snapshot} Snapshot */
-/** @typedef {import("./types.js").SnapshotResult} SnapshotResult */
-/** @typedef {import("./types.js").ThemeColors} ThemeColors */
-/** @typedef {import("./types.js").ModContext} ModContext */
 /** @typedef {import("gpui-kit").KeyEvent} KeyEvent */
+/** @typedef {import("./schemas.js").ConsoleChoices} ConsoleChoices */
+/** @typedef {import("./schemas.js").ConsoleView} ConsoleView */
+/** @typedef {import("./schemas.js").ModContext} ModContext */
+/** @typedef {import("./schemas.js").ProcessSort} ProcessSort */
+/** @typedef {import("./schemas.js").ThemeColors} ThemeColors */
 
-const MOD_NAME = "herdwatch";
-const MONITOR_STATE_KEY = "herdwatch.state";
-const HISTORY_KEY = "herdwatch.history";
-const WORKTREES_KEY = "herdwatch.worktrees";
-const SORT_KEY = "herdwatch.sort";
-const VIEW_STORAGE_KEY = "herdwatch.view";
-const POLLER_KEY = "herdwatch.poller";
-const TOGGLE_COMMAND = "toggle";
-const FOCUS_COMMAND = "focus";
-const SORT_KEYS = /** @type {Record<string, ProcessSort>} */ ({ c: "cpu", m: "mem" });
-const CONSOLE_TABS = /** @type {ConsoleTab[]} */ (["overview", "agents", "ports", "worktrees", "procs"]);
-const WORKTREE_FILTERS = /** @type {WorktreeFilter[]} */ (["all", "stale", "changed", "agent", "behind"]);
-const RANGE_SAMPLES = [24, 60, 120];
-const DEFAULT_RANGE_SAMPLES = 60;
-const POLL_INTERVAL_MS = 5000;
-const POLL_LEASE_SECONDS = 12;
-const BACKEND_TIMEOUT_MS = 20000;
-const WORKTREE_TIMEOUT_MARGIN_MS = 30000;
-const MAX_EXEC_TIMEOUT_MS = 600000;
-const DEFAULT_DETAIL_REFRESH_MS = 2000;
+const DEFAULT_CONSOLE_REFRESH_MS = 2000;
+const DEFAULT_CONSOLE_WIDTH_PX = 640;
+const WIDE_CONSOLE_PX = 560;
 const MILLISECONDS_PER_SECOND = 1000;
-const DEFAULT_DETAIL_WIDTH_PX = 640;
-const MONOSPACE_FONT = "JetBrains Mono";
-/** @type {Record<string, string>} */
-const MAC_KEY_SYMBOLS = { cmd: "⌘", ctrl: "⌃", shift: "⇧", alt: "⌥", option: "⌥" };
-
-const readMonitorState = () => monitorStateOrNull(shared(MONITOR_STATE_KEY));
-const readHistory = () => historyOrEmpty(shared(HISTORY_KEY));
-const readWorktrees = () => worktreesOrEmpty(shared(WORKTREES_KEY));
-/** @returns {ProcessSort} */
-const readSort = () => (shared(SORT_KEY) === "mem" ? "mem" : "cpu");
-/** @param {ProcessSort} sort */
-const setSort = (sort) => setShared(SORT_KEY, sort);
-const themeColors = () => /** @type {ThemeColors} */ (theme());
-const backendPath = () => `${appHome()}/mods/${MOD_NAME}/bin/herdwatch`;
+/** @type {Record<string, ProcessSort>} */
+const SORT_KEYS = { c: "cpu", m: "mem" };
 
 /**
- * One copy polls at a time: the copy that holds the lease, or any copy once the lease is older than POLL_LEASE_SECONDS.
- * So the console keeps its data fresh when no pill is shown, and a pill and a console never poll together.
- * @param {string} copyId
+ * @param {ModContext} cx
+ * @param {Record<string, () => void>} handlers
  */
-function takePollLease(copyId) {
-  const now = nowInSeconds();
-  if (isPollLeaseHeldByAnotherCopy(shared(POLLER_KEY), copyId, now, POLL_LEASE_SECONDS)) return false;
-  setShared(POLLER_KEY, { owner: copyId, at: now });
-  return true;
-}
-
-function shortcutLabel() {
-  const binding = keys().find((key) => key.action === `${MOD_NAME}.${TOGGLE_COMMAND}`);
-  if (!binding) return null;
-  const isMac = herdrWindow()?.platform === "macos";
-  return binding.keys.split("-").map((part) => (isMac ? MAC_KEY_SYMBOLS[part] : null) ?? part.toUpperCase()).join(isMac ? "" : "+");
-}
-
-/** @returns {Promise<SnapshotResult>} */
-async function runSnapshot() {
-  const result = await exec("bash", [backendPath(), "snapshot"], { timeout: BACKEND_TIMEOUT_MS });
-  if (result.code !== 0) return { ok: false, error: result.stderr.trim() || `backend exited with ${result.code}` };
-  return parseSnapshot(result.stdout);
-}
-
-/** @param {Snapshot} snapshot */
-async function runWorktreeMeasure(snapshot) {
-  const timeout = Math.min(snapshot.settings.worktree_timeout * MILLISECONDS_PER_SECOND + WORKTREE_TIMEOUT_MARGIN_MS, MAX_EXEC_TIMEOUT_MS);
-  await exec("bash", [backendPath(), "worktrees"], { timeout });
-}
-
-/** @param {HotHostAlert[]} alerts */
-function announceAlerts(alerts) {
-  for (const alert of alerts) {
-    notify({
-      title: `herdwatch: ${alert.label} is hot`,
-      body: `CPU ${alert.cpu_pct ?? "?"}% · MEM ${alert.mem_pct ?? "?"}% · top: ${alert.top_process || "?"}`,
-      level: "warning",
-    });
-    playSound("blocked");
-  }
-}
-
-/** @param {WorktreesByHost} worktrees */
-const worktreeSignature = (worktrees) => Object.entries(worktrees)
-  .map(([label, value]) => `${label}:${value.state}:${value.measured_at}:${value.items.length}`).sort().join("|");
-
-/**
- * Splits the worktree lists out of the snapshot, so the 5 s state update stays small.
- * @param {Snapshot} snapshot
- * @returns {{ light: Snapshot, worktrees: WorktreesByHost }}
- */
-function splitWorktrees(snapshot) {
-  /** @type {WorktreesByHost} */
-  const worktrees = {};
-  const hosts = snapshot.hosts.map((host) => {
-    worktrees[host.label] = host.worktrees;
-    return { ...host, worktrees: { ...host.worktrees, items: /** @type {import("./types.js").WorktreeItem[]} */ ([]) } };
+function handleCommands(cx, handlers) {
+  cx.spawn(async () => {
+    for (;;) {
+      const command = await nextCommand();
+      handlers[command]?.();
+    }
   });
-  return { light: { ...snapshot, hosts }, worktrees };
 }
 
-/** @param {string | undefined} tab */
-const detailPaneIn = (tab) => panes().find((pane) => pane.mod === MOD_NAME && pane.tab === tab);
-
-function closeDetail() {
-  const openDetail = detailPaneIn(focused()?.tab);
-  if (openDetail) run("pane.close", { pane: openDetail.pane });
-}
-
-function toggleDetail() {
-  const current = focused();
-  if (!current?.tab) return;
-  const openDetail = detailPaneIn(current.tab);
-  if (openDetail) {
-    run("pane.close", { pane: openDetail.pane });
-    return;
-  }
-  const previousPane = current.pane;
-  run("pane.split", { direction: "right", mod: MOD_NAME, props: { view: "detail" }, ...(previousPane ? { pane: previousPane } : {}) });
-  if (previousPane) run("pane.focus", { pane: previousPane });
-}
+/** @param {KeyEvent} event */
+const hasModifier = (event) => Boolean(event.modifiers?.platform || event.modifiers?.control || event.modifiers?.alt);
 
 /**
- * @typedef {object} DetailChoices
- * @property {string | null} host
- * @property {ConsoleTab} tab
- * @property {number} range
- * @property {WorktreeFilter} filter
+ * One class serves both copies of the mod: the pill in the tab row, and the console pane the pill opens.
  */
-
-/** @returns {DetailChoices} */
-function loadDetailChoices() {
-  /** @type {DetailChoices} */
-  const defaults = { host: null, tab: "overview", range: DEFAULT_RANGE_SAMPLES, filter: "all" };
-  try {
-    const stored = JSON.parse(localStorage.getItem(VIEW_STORAGE_KEY) ?? "{}");
-    return {
-      host: typeof stored.host === "string" ? stored.host : null,
-      tab: CONSOLE_TABS.includes(stored.tab) ? stored.tab : defaults.tab,
-      range: RANGE_SAMPLES.includes(stored.range) ? stored.range : defaults.range,
-      filter: WORKTREE_FILTERS.includes(stored.filter) ? stored.filter : defaults.filter,
-    };
-  } catch {
-    return defaults;
-  }
-}
-
 export default class Herdwatch extends View {
   /** @param {unknown} _props @param {ModContext} cx */
   init(_props, cx) {
-    this.isBar = props()?.view !== "detail";
-    this.copyId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    this.startPolling(cx);
-    if (this.isBar) this.listenForToggle(cx);
-    else this.startDetail(cx);
+    new Poller().start(cx);
+    this.isConsole = isConsoleCopy();
+    if (this.isConsole) this.initConsole(cx);
+    else handleCommands(cx, { [TOGGLE_COMMAND]: toggleConsole });
   }
 
   /** @param {ModContext} cx */
-  startPolling(cx) {
-    this.pollRunning = false;
-    this.worktreeMeasureRunning = false;
-    /** @type {string} */
-    this.lastWorktreeSignature = "";
-    cx.timer.every(POLL_INTERVAL_MS, (timerCx) => this.pollWithLease(timerCx));
-    this.pollWithLease(cx);
-  }
-
-  /** @param {ModContext} cx */
-  pollWithLease(cx) {
-    if (takePollLease(this.copyId)) this.poll(cx);
-  }
-
-  /** @param {ModContext} cx */
-  listenForToggle(cx) {
-    cx.spawn(async () => {
-      for (;;) {
-        const command = await nextCommand();
-        if (command === TOGGLE_COMMAND) toggleDetail();
-      }
-    });
-  }
-
-  /** @param {ModContext} cx */
-  poll(cx) {
-    if (this.pollRunning) return;
-    this.pollRunning = true;
-    cx.spawn(async () => {
-      try {
-        const outcome = await runSnapshot();
-        if (!("snapshot" in outcome)) {
-          setShared(MONITOR_STATE_KEY, { snapshot: readMonitorState()?.snapshot ?? null, error: outcome.error });
-          return;
-        }
-        const { light, worktrees } = splitWorktrees(outcome.snapshot);
-        const signature = worktreeSignature(worktrees);
-        if (signature !== this.lastWorktreeSignature) {
-          this.lastWorktreeSignature = signature;
-          setShared(WORKTREES_KEY, worktrees);
-        }
-        setShared(HISTORY_KEY, nextHistory(readHistory(), outcome.snapshot, nowInSeconds()));
-        setShared(MONITOR_STATE_KEY, { snapshot: light, error: null });
-        announceAlerts(outcome.snapshot.alerts);
-        if (outcome.snapshot.worktrees_due) this.measureWorktrees(cx, outcome.snapshot);
-      } catch (execError) {
-        setShared(MONITOR_STATE_KEY, { snapshot: readMonitorState()?.snapshot ?? null, error: String(execError) });
-      } finally {
-        this.pollRunning = false;
-      }
-    });
-  }
-
-  /** @param {ModContext} cx @param {Snapshot} snapshot */
-  measureWorktrees(cx, snapshot) {
-    if (this.worktreeMeasureRunning) return;
-    this.worktreeMeasureRunning = true;
-    cx.spawn(async () => {
-      try {
-        await runWorktreeMeasure(snapshot);
-      } catch (execError) {
-        console.log("herdwatch_worktree_measure_failed", String(execError));
-      } finally {
-        this.worktreeMeasureRunning = false;
-      }
-    });
-  }
-
-  /** @param {ModContext} cx */
-  startDetail(cx) {
+  initConsole(cx) {
     this.focusHandle = cx.focus_handle();
     /** @type {number} */
-    this.width = DEFAULT_DETAIL_WIDTH_PX;
-    this.choices = loadDetailChoices();
+    this.width = DEFAULT_CONSOLE_WIDTH_PX;
+    /** @type {ConsoleChoices} */
+    this.choices = loadConsoleChoices();
     const refreshSeconds = readMonitorState()?.snapshot?.settings?.pane_refresh;
-    const refreshMs = Number.isFinite(refreshSeconds) ? refreshSeconds * MILLISECONDS_PER_SECOND : DEFAULT_DETAIL_REFRESH_MS;
+    const refreshMs = Number.isFinite(refreshSeconds) ? refreshSeconds * MILLISECONDS_PER_SECOND : DEFAULT_CONSOLE_REFRESH_MS;
     cx.timer.every(refreshMs, (timerCx) => timerCx.notify());
-    cx.spawn(async () => {
-      for (;;) {
-        const command = await nextCommand();
-        if (command === FOCUS_COMMAND) this.focusHandle.focus();
-      }
-    });
+    handleCommands(cx, { [FOCUS_COMMAND]: () => this.focusHandle.focus() });
   }
 
-  /** @param {Partial<DetailChoices>} change */
-  choose(change) {
+  /** @param {Partial<ConsoleChoices>} change @param {ModContext} cx */
+  choose(change, cx) {
     this.choices = { ...this.choices, ...change };
-    try {
-      localStorage.setItem(VIEW_STORAGE_KEY, JSON.stringify(this.choices));
-    } catch (storageError) {
-      console.log("herdwatch_view_not_saved", String(storageError));
-    }
+    saveConsoleChoices(this.choices);
+    cx.notify();
   }
 
-  /** @param {KeyEvent} event @param {ModContext} cx */
-  handleDetailKey(event, cx) {
-    const hasModifier = event.modifiers?.platform || event.modifiers?.control || event.modifiers?.alt;
-    if (hasModifier) return;
+  /**
+   * c and m sort the processes; 1 to 9 pick a host.
+   * @param {KeyEvent} event
+   * @param {ModContext} cx
+   */
+  handleConsoleKey(event, cx) {
+    if (hasModifier(event)) return;
     const sort = SORT_KEYS[event.key];
-    if (sort) setSort(sort);
-    const hostIndex = Number(event.key) - 1;
+    if (sort) saveSort(sort);
     const hosts = readMonitorState()?.snapshot?.hosts ?? [];
-    if (Number.isInteger(hostIndex) && hostIndex >= 0 && hostIndex < hosts.length) {
-      this.choose({ host: hosts[hostIndex].label });
-      cx.notify();
-    }
+    const hostIndex = Number(event.key) - 1;
+    const isHostKey = Number.isInteger(hostIndex) && hostIndex >= 0 && hostIndex < hosts.length;
+    if (isHostKey) this.choose({ host: hosts[hostIndex].label }, cx);
   }
 
   /** @param {ModContext} cx */
@@ -298,13 +98,13 @@ export default class Herdwatch extends View {
     cx.notify();
   }
 
-  /** @param {ModContext} cx */
-  renderDetail(cx) {
+  /** @param {ModContext} cx @returns {ConsoleView} */
+  consoleView(cx) {
     const monitorState = readMonitorState();
     const history = readHistory();
     const hosts = monitorState?.snapshot?.hosts ?? [];
-    const host = hosts.find((item) => item.label === this.choices.host) ?? hosts[0] ?? null;
-    const view = {
+    const host = hosts.find((candidate) => candidate.label === this.choices.host) ?? hosts[0] ?? null;
+    return {
       monitorState,
       history,
       worktrees: readWorktrees(),
@@ -314,27 +114,36 @@ export default class Herdwatch extends View {
       rangeSamples: this.choices.range,
       sort: readSort(),
       worktreeFilter: this.choices.filter,
-      shortcut: shortcutLabel(),
+      shortcut: toggleShortcutLabel(),
       hasKeyboard: this.focusHandle.is_focused(),
-      width: this.width,
-      onHost: (/** @type {string} */ label) => { this.choose({ host: label }); cx.notify(); },
-      onTab: (/** @type {ConsoleTab} */ tab) => { this.choose({ tab }); cx.notify(); },
-      onRange: (/** @type {number} */ range) => { this.choose({ range }); cx.notify(); },
-      onSort: setSort,
-      onWorktreeFilter: (/** @type {WorktreeFilter} */ filter) => { this.choose({ filter }); cx.notify(); },
-      onClose: closeDetail,
+      isWide: this.width >= WIDE_CONSOLE_PX,
+      onHost: (label) => this.choose({ host: label }, cx),
+      onTab: (tab) => this.choose({ tab }, cx),
+      onRange: (range) => this.choose({ range }, cx),
+      onSort: saveSort,
+      onWorktreeFilter: (filter) => this.choose({ filter }, cx),
+      onClose: closeConsole,
     };
-    return renderConsole(view, MONOSPACE_FONT)
+  }
+
+  /** @param {ModContext} cx */
+  renderConsolePane(cx) {
+    return renderConsole(this.consoleView(cx), MONOSPACE_FONT)
       .track_focus(this.focusHandle)
-      .on_key_down((/** @type {KeyEvent} */ event, /** @type {ModContext} */ keyCx) => this.handleDetailKey(event, keyCx))
+      .on_key_down((/** @type {KeyEvent} */ event, /** @type {ModContext} */ keyCx) => this.handleConsoleKey(event, keyCx))
       .on_mouse_down("left", (/** @type {unknown} */ _event, /** @type {ModContext} */ mouseCx) => this.takeKeyboard(mouseCx))
       .on_size_change((/** @type {{ width: number }} */ size, /** @type {ModContext} */ sizeCx) => this.updateWidth(size.width, sizeCx));
   }
 
   /** @param {ModContext} cx */
   render(cx) {
-    if (!this.isBar) return this.renderDetail(cx);
-    const barView = { monitorState: readMonitorState(), isDetailOpen: Boolean(detailPaneIn(focused()?.tab)), shortcut: shortcutLabel(), onToggleDetail: toggleDetail };
-    return renderBar(barView, themeColors(), MONOSPACE_FONT);
+    if (this.isConsole) return this.renderConsolePane(cx);
+    const barView = {
+      monitorState: readMonitorState(),
+      isConsoleOpen: isConsoleOpenInFocusedTab(),
+      shortcut: toggleShortcutLabel(),
+      onToggleConsole: toggleConsole,
+    };
+    return renderBar(barView, /** @type {ThemeColors} */ (theme()), MONOSPACE_FONT);
   }
 }

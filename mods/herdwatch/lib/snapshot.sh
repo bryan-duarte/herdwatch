@@ -1,7 +1,8 @@
+# shellcheck shell=bash
 SNAPSHOT_FORMAT_VERSION=2
 
 herdwatch_json_string() {
-  awk -v text="$1" 'BEGIN { gsub(/\\/, "\\\\", text); gsub(/"/, "\\\"", text); printf "\"%s\"", text }'
+  HERDWATCH_JSON_TEXT="$1" awk 'BEGIN { text = ENVIRON["HERDWATCH_JSON_TEXT"]; gsub(/\\/, "\\\\", text); gsub(/"/, "\\\"", text); printf "\"%s\"", text }'
 }
 
 herdwatch_worktrees_sorted_by_size() {
@@ -9,7 +10,7 @@ herdwatch_worktrees_sorted_by_size() {
   tab=$(printf '\t')
   [ -r "$worktrees_file" ] || return 0
   sed -n "1,/^\\$WORKTREES_SECTION\$/p" "$worktrees_file"
-  sed -n "/^\\$WORKTREES_SECTION\$/,\$p" "$worktrees_file" | tail -n +2 | sort -t "$tab" -k1,1 -rn
+  herdwatch_worktree_rows "$worktrees_file" | sort -t "$tab" -k1,1 -rn
 }
 
 herdwatch_print_host_json() {

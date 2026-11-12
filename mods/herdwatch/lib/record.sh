@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 HERDWATCH_RECORD_KEYS="label target state polled_at updated_at error os ncpu cpu_pct load mem_total_kb mem_used_kb mem_pct swap_total_kb swap_used_kb swap_pct procs disk_pct"
 HERDWATCH_SECTION_PATTERN='^\[[a-z]+\]$'
 HERDWATCH_PROCESS_SECTION="[procs]"
