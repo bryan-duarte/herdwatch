@@ -53,7 +53,7 @@ To watch the Mac or Linux box Herdr runs on, add `localhost`. This needs a runni
 
 ![The pill in the tab row](assets/cover-pill.png)
 
-**The pill.** On the first install, Herdr docks it as a thin strip at the top of the window. It shows each host's CPU as a 4-cell meter, with `!` at 70% and `!!` at 90%. Click it, or press `cmd-shift-m`, to open the console beside your terminal. The focus stays in your terminal. To put the pill in the tab row, see [Layout](#put-the-pill-in-the-tab-row).
+**The pill.** On the first install, Herdr docks it as a thin strip at the top of the window. It shows each host's CPU and memory, each with its icon and a 4-cell meter, with `!` at 70% and `!!` at 90%. Click it, or press `cmd-shift-m`, to open the console beside your terminal. The focus stays in your terminal. To put the pill in the tab row, see [Layout](#put-the-pill-in-the-tab-row).
 
 ![Many hosts](assets/cover-fleet.png)
 

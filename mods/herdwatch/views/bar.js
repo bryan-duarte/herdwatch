@@ -3,7 +3,7 @@ import { h_flex } from "gpui-base";
 import { percentText } from "../format.js";
 import { isStale, percentLevel } from "../health.js";
 import { GRADIENTS, TOKYO_NIGHT, levelColor } from "../palette.js";
-import { meter, pressable, text } from "./widgets.js";
+import { meter, pressable, text, uiIcon } from "./widgets.js";
 
 /** @typedef {import("gpui-kit").Color} Color */
 /** @typedef {import("../schemas.js").BarView} BarView */
@@ -31,6 +31,22 @@ const UNREACHABLE_MARKS = {
 };
 
 /**
+ * One reading in a host's segment: its glyph (CPU or memory), a small meter and the percent, so the two
+ * numbers can never be read as each other.
+ * @param {import("./widgets.js").UiGlyph} glyph
+ * @param {number | null} percent
+ * @param {readonly Color[]} gradient
+ * @param {MonitorSettings} settings
+ */
+function reading(glyph, percent, gradient, settings) {
+  const level = percentLevel(percent, settings);
+  return h_flex().flex_none().gap(4).items_center()
+    .child(uiIcon(glyph).text_color(TOKYO_NIGHT.comment))
+    .child(meter(percent, BAR_METER_CELLS, gradient))
+    .child(text(`${percentText(percent)}${LEVEL_MARKS[level]}`, levelColor(level)));
+}
+
+/**
  * @param {HostSnapshot} host
  * @param {MonitorSettings} settings
  */
@@ -40,10 +56,9 @@ function hostSegment(host, settings) {
     const { mark, color } = UNREACHABLE_MARKS[host.state];
     return segment.child(text(mark, color));
   }
-  const cpuLevel = percentLevel(host.cpu_pct, settings);
   return segment
-    .child(meter(host.cpu_pct, BAR_METER_CELLS, GRADIENTS.cpu))
-    .child(text(`${percentText(host.cpu_pct)}${LEVEL_MARKS[cpuLevel]}`, levelColor(cpuLevel)))
+    .child(reading("cpu", host.cpu_pct, GRADIENTS.cpu, settings))
+    .child(reading("memory-stick", host.mem_pct, GRADIENTS.memory, settings))
     .when(isStale(host, settings), (element) => element.child(text("?", TOKYO_NIGHT.comment)));
 }
 
@@ -81,7 +96,8 @@ function pill(view) {
 }
 
 /**
- * The pill in the tab row: one segment per host, and a button that opens or closes the console.
+ * The pill in the tab row: one segment per host (its CPU and its memory), and a button that opens or
+ * closes the console.
  * @param {BarView} view
  * @param {ThemeColors} colors
  * @param {string} monospaceFont

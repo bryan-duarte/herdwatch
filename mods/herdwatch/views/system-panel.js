@@ -5,7 +5,7 @@ import { eventMarkers, samplesInRange } from "../history.js";
 import { GRADIENTS, TOKYO_NIGHT, levelColor } from "../palette.js";
 import { worktreeTotals, worktreesOfHost } from "../worktrees.js";
 import { areaChart, coreStrip, sparkline } from "./charts.js";
-import { hostTitle, meter, panel, rightCell, rowLabel, text, titleRow, truncatedText, uiIcon } from "./widgets.js";
+import { ROW_LABEL_WIDTH_PX, hostTitle, meter, panel, rowLabel, text, truncatedText } from "./widgets.js";
 
 /** @typedef {import("gpui-kit").Color} Color */
 /** @typedef {import("../schemas.js").ConsoleView} ConsoleView */
@@ -14,9 +14,9 @@ import { hostTitle, meter, panel, rightCell, rowLabel, text, titleRow, truncated
 /** @typedef {import("../schemas.js").HostSnapshot} HostSnapshot */
 /** @typedef {import("../schemas.js").MonitorSettings} MonitorSettings */
 
-const CHART_HEIGHT_PX = 58;
+const CHART_HEIGHT_PX = 46;
 const RESOURCE_METER_CELLS = 20;
-const PERCENT_WIDTH_PX = 44;
+const ROW_GAP_PX = 10;
 const MANY_CORES = 16;
 const WIDE_CORE_CELL_PX = 10;
 const NARROW_CORE_CELL_PX = 6;
@@ -25,18 +25,26 @@ const NET_SPARKLINE_SIZE = { widthPx: 70, heightPx: 16 };
 /** @type {Record<HostEvent["kind"], Color>} */
 const EVENT_COLORS = { start: TOKYO_NIGHT.blue, done: TOKYO_NIGHT.green, alert: TOKYO_NIGHT.red };
 
-/** @param {import("./widgets.js").UiGlyph} glyph @param {string} label @param {string} reading @param {Color} readingColor @param {Element} chart */
-const chartBlock = (glyph, label, reading, readingColor, chart) => v_flex().flex_1().min_w(0).gap(4)
-  .child(h_flex().justify_between()
-    .child(titleRow(uiIcon(glyph).text_color(TOKYO_NIGHT.comment), text(label, TOKYO_NIGHT.comment)))
-    .child(text(reading, readingColor).font_semibold()))
-  .child(chart);
-
 /** @param {string} label @param {import("./widgets.js").UiGlyph} glyph @param {...Element} cells */
-const resourceRow = (label, glyph, ...cells) => h_flex().gap(10).items_center().child(rowLabel(label, glyph)).children(cells);
+const resourceRow = (label, glyph, ...cells) => h_flex().gap(ROW_GAP_PX).items_center().child(rowLabel(label, glyph)).children(cells);
 
-/** @param {number | null} percent @param {MonitorSettings} settings */
-const percentCell = (percent, settings) => rightCell(percentText(percent), PERCENT_WIDTH_PX, levelColor(percentLevel(percent, settings)));
+/**
+ * A metered reading: the label and its meter, then the percent (bold) and the detail on a line under the
+ * meter. Under it rather than beside it, the numbers keep their room in a narrow pane.
+ * @param {{ label: string, glyph: import("./widgets.js").UiGlyph, percent: number | null, gradient: readonly Color[], detail: string, settings: MonitorSettings }} reading
+ */
+const meterReading = ({ label, glyph, percent, gradient, detail, settings }) => v_flex().gap(2)
+  .child(resourceRow(label, glyph, meter(percent, RESOURCE_METER_CELLS, gradient)))
+  .child(h_flex().pl(ROW_LABEL_WIDTH_PX + ROW_GAP_PX).gap(8).items_center()
+    .child(text(percentText(percent), levelColor(percentLevel(percent, settings))).font_semibold())
+    .child(truncatedText(detail, TOKYO_NIGHT.dim)));
+
+/**
+ * CPU or memory, the two readings that matter most: one full-width block each, so a percent can never be
+ * read as the other one's, with its chart under it at the full width of the box.
+ * @param {Parameters<typeof meterReading>[0] & { chart: Element }} block
+ */
+const readingBlock = ({ chart, ...reading }) => v_flex().w_full().gap(4).child(meterReading(reading)).child(chart);
 
 /** @param {ConsoleView} view @param {HostSnapshot} host @param {MonitorSettings} settings */
 function hostCharts(view, host, settings) {
@@ -51,11 +59,16 @@ function hostCharts(view, host, settings) {
     secondLine: samplesInRange(series?.swap, view.rangeSamples),
     secondLineColor: TOKYO_NIGHT.purple,
   });
-  const cpuLabel = `cpu · ${host.ncpu ?? "?"} cores`;
-  const memoryLabel = `mem ${kibAsGib(host.mem_used_kb)} / ${kibAsGib(host.mem_total_kb)} GiB`;
-  return h_flex().gap(10)
-    .child(chartBlock("cpu", cpuLabel, percentText(host.cpu_pct), levelColor(percentLevel(host.cpu_pct, settings)), cpuChart))
-    .child(chartBlock("memory-stick", memoryLabel, percentText(host.mem_pct), levelColor(percentLevel(host.mem_pct, settings)), memoryChart));
+  const swap = Number.isFinite(host.swap_pct) && Number(host.swap_pct) > 0 ? ` · swap ${percentText(host.swap_pct)}` : "";
+  return v_flex().gap(10)
+    .child(readingBlock({
+      label: "cpu", glyph: "cpu", percent: host.cpu_pct, gradient: GRADIENTS.cpu,
+      detail: `${host.ncpu ?? "?"} cores`, chart: cpuChart, settings,
+    }))
+    .child(readingBlock({
+      label: "mem", glyph: "memory-stick", percent: host.mem_pct, gradient: GRADIENTS.memory,
+      detail: `${kibAsGib(host.mem_used_kb)} / ${kibAsGib(host.mem_total_kb)} GiB${swap}`, chart: memoryChart, settings,
+    }));
 }
 
 /** @param {HostSnapshot} host */
@@ -88,29 +101,36 @@ function networkRow(view, host) {
     truncatedText(`↓ ${byteRate(host.net_rx_rate)} ↑ ${byteRate(host.net_tx_rate)}`, TOKYO_NIGHT.dim));
 }
 
+/**
+ * The per-core strip, first in the box: the quickest read of how loaded the host is.
+ * @param {ConsoleView} view @param {HostSnapshot} host
+ */
+function coresRow(view, host) {
+  const coreCellPx = host.cores.length > MANY_CORES || !view.isWide ? NARROW_CORE_CELL_PX : WIDE_CORE_CELL_PX;
+  return resourceRow("cores", "cpu", coreStrip(host.cores, coreCellPx));
+}
+
 /** @param {ConsoleView} view @param {HostSnapshot} host @param {MonitorSettings} settings */
 function resourceRows(view, host, settings) {
   const rows = v_flex().gap(5);
-  const coreCellPx = host.cores.length > MANY_CORES || !view.isWide ? NARROW_CORE_CELL_PX : WIDE_CORE_CELL_PX;
-  if (host.cores.length) rows.child(resourceRow("cores", "cpu", coreStrip(host.cores, coreCellPx)));
-  rows.child(resourceRow("disk", "hard-drive",
-    meter(host.disk_pct, RESOURCE_METER_CELLS, GRADIENTS.disk),
-    percentCell(host.disk_pct, settings),
-    truncatedText(diskDetail(host), TOKYO_NIGHT.dim)));
+  rows.child(meterReading({
+    label: "disk", glyph: "hard-drive", percent: host.disk_pct, gradient: GRADIENTS.disk, detail: diskDetail(host), settings,
+  }));
   rows.child(networkRow(view, host));
   if (host.gpu) {
     const videoMemory = `${mibAsGib(host.gpu.mem_used_mib)} / ${mibAsGib(host.gpu.mem_total_mib)} GiB`;
-    rows.child(resourceRow("gpu", "microchip",
-      meter(host.gpu.pct, RESOURCE_METER_CELLS, GRADIENTS.swap),
-      percentCell(host.gpu.pct, settings),
-      truncatedText(`${host.gpu.name} · vram ${videoMemory}`, TOKYO_NIGHT.dim)));
+    rows.child(meterReading({
+      label: "gpu", glyph: "microchip", percent: host.gpu.pct, gradient: GRADIENTS.swap,
+      detail: `${host.gpu.name} · vram ${videoMemory}`, settings,
+    }));
   }
   rows.child(resourceRow("wt", "git-branch", truncatedText(worktreeSummary(view, host), TOKYO_NIGHT.teal)));
   return rows;
 }
 
 /**
- * The overview box of one host: CPU and memory charts, then cores, disk, network, GPU and worktree rows.
+ * The overview box of one host: the cores strip, CPU, then memory (each a reading over its chart), then
+ * disk, network, GPU and worktree rows.
  * @param {ConsoleView} view
  * @param {HostSnapshot} host
  * @param {number} hostNumber
@@ -124,6 +144,6 @@ export function systemPanel(view, host, hostNumber, settings) {
     id: `system-${host.label}`,
     title: hostTitle(host.label, hostNumber, TOKYO_NIGHT.blue),
     rightTitle: text(rightTitle, stale ? TOKYO_NIGHT.yellow : TOKYO_NIGHT.comment),
-    body: [hostCharts(view, host, settings), resourceRows(view, host, settings)],
+    body: [...(host.cores.length ? [coresRow(view, host)] : []), hostCharts(view, host, settings), resourceRows(view, host, settings)],
   });
 }
