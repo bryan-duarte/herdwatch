@@ -1,0 +1,87 @@
+{
+  "createdAt": "2026-11-12T17:59:57.461Z",
+  "engine": {
+    "overview-60": {
+      "medianMs": 48.5,
+      "overLimit": 0
+    },
+    "overview-120": {
+      "medianMs": 57.5,
+      "overLimit": 0
+    },
+    "agents-60": {
+      "medianMs": 23.7,
+      "overLimit": 0
+    },
+    "ports-60": {
+      "medianMs": 16.5,
+      "overLimit": 0
+    },
+    "worktrees-60": {
+      "medianMs": 41.8,
+      "overLimit": 0
+    },
+    "docker-60": {
+      "medianMs": 9.4,
+      "overLimit": 0
+    },
+    "procs-60": {
+      "medianMs": 15.5,
+      "overLimit": 0
+    },
+    "pill-60": {
+      "medianMs": 2.1,
+      "overLimit": 0
+    },
+    "poll-60": {
+      "medianMs": 2.1,
+      "overLimit": 0
+    }
+  },
+  "structure": {
+    "overview-60": {
+      "elements": 355,
+      "hostCalls": 2917,
+      "pathOps": 937
+    },
+    "overview-120": {
+      "elements": 355,
+      "hostCalls": 3217,
+      "pathOps": 1237
+    },
+    "agents-60": {
+      "elements": 211,
+      "hostCalls": 1717,
+      "pathOps": 455
+    },
+    "ports-60": {
+      "elements": 611,
+      "hostCalls": 3840,
+      "pathOps": 0
+    },
+    "worktrees-60": {
+      "elements": 1377,
+      "hostCalls": 8067,
+      "pathOps": 0
+    },
+    "docker-60": {
+      "elements": 262,
+      "hostCalls": 1573,
+      "pathOps": 0
+    },
+    "procs-60": {
+      "elements": 587,
+      "hostCalls": 3481,
+      "pathOps": 0
+    },
+    "pill-60": {
+      "elements": 23,
+      "hostCalls": 124,
+      "pathOps": 0
+    }
+  },
+  "poll": {
+    "sharedWrites": 3,
+    "sharedBytes": 14693
+  }
+}
