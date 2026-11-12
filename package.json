@@ -6,6 +6,8 @@
   "scripts": {
     "test": "node --import ./tests/register.js --test 'tests/**/*.test.js'",
     "typecheck": "tsc -p mods/herdwatch/jsconfig.json",
-    "lint:shell": "shellcheck mods/herdwatch/bin/herdwatch mods/herdwatch/lib/*.sh mods/herdwatch/lib/probe/*.sh mods/herdwatch/lib/action_scripts/*.sh mods/herdwatch/lib/docker_probe.sh mods/herdwatch/lib/worktrees_probe.sh"
+    "lint:shell": "shellcheck mods/herdwatch/bin/herdwatch mods/herdwatch/lib/*.sh mods/herdwatch/lib/probe/*.sh mods/herdwatch/lib/action_scripts/*.sh mods/herdwatch/lib/docker_probe.sh mods/herdwatch/lib/worktrees_probe.sh",
+    "bench": "node --import ./bench/register.js bench/run.js",
+    "bench:save": "node --import ./bench/register.js bench/run.js --save"
   }
 }

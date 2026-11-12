@@ -73,8 +73,11 @@ function killCell(agent, host, view) {
   return cell.child(killButton({ id: `agent-kill-${host.label}-${pid}`, processName: app, pid, onPress: () => view.onKill(host, pid) }));
 }
 
-/** @param {AgentView} agent @param {HostSnapshot} host @param {MonitorSettings} settings @param {ConsoleView} view */
-function agentRow(agent, host, settings, view) {
+/**
+ * @param {AgentView} agent @param {HostSnapshot} host @param {MonitorSettings} settings @param {ConsoleView} view
+ * @param {boolean} hasSparkline
+ */
+function agentRow(agent, host, settings, view, hasSparkline) {
   const { process } = agent;
   const { isWide } = view;
   const cpu = treeCpu(process);
@@ -85,20 +88,20 @@ function agentRow(agent, host, settings, view) {
     .child(h_flex().flex_1().min_w(0).gap(6)
       .child(text(process.repository || "", TOKYO_NIGHT.blue))
       .child(truncatedText(process.branch || folder, TOKYO_NIGHT.foregroundDark)))
-    .when(isWide, (element) => element.child(cpuSparkline(agent)))
+    .when(hasSparkline, (element) => element.child(cpuSparkline(agent)))
     .child(rightCell(cpu.toFixed(1), COLUMN_WIDTH_PX.cpu, levelColor(percentLevel(Math.min(cpu, PERCENT_SCALE), settings))))
     .child(rightCell(storageSize(process.tree_rss_kb), COLUMN_WIDTH_PX.memory, TOKYO_NIGHT.foregroundDark))
     .child(rightCell(ageOrUnknown(process.elapsed_seconds), COLUMN_WIDTH_PX.uptime, TOKYO_NIGHT.comment))
     .child(killCell(agent, host, view));
 }
 
-/** @param {boolean} isWide */
-function tableHeader(isWide) {
+/** @param {boolean} isWide @param {boolean} hasSparkline */
+function tableHeader(isWide, hasSparkline) {
   return h_flex().gap(8).text_color(TOKYO_NIGHT.comment)
     .child(fixedCell(isWide ? COLUMN_WIDTH_PX.app : MARK_ONLY_COLUMN_PX).child(isWide ? "agent" : ""))
     .child(fixedCell(COLUMN_WIDTH_PX.state).child("state"))
     .child(div().flex_1().child("branch"))
-    .when(isWide, (element) => element.child(fixedCell(CPU_SPARKLINE_SIZE.widthPx).child(CPU_SPARKLINE_TITLE)))
+    .when(hasSparkline, (element) => element.child(fixedCell(CPU_SPARKLINE_SIZE.widthPx).child(CPU_SPARKLINE_TITLE)))
     .child(rightCell("cpu", COLUMN_WIDTH_PX.cpu, TOKYO_NIGHT.comment))
     .child(rightCell("mem", COLUMN_WIDTH_PX.memory, TOKYO_NIGHT.comment))
     .child(rightCell("up", COLUMN_WIDTH_PX.uptime, TOKYO_NIGHT.comment))
@@ -107,16 +110,18 @@ function tableHeader(isWide) {
 
 /**
  * The coding agents on the host: app, state, branch, CPU history, the CPU and memory of each agent's process tree,
- * and run time.
+ * and run time. The overview passes showSparklines false: there, the sparklines cost more than the rest of the box.
  * @param {ConsoleView} view
  * @param {HostSnapshot} host
  * @param {MonitorSettings} settings
+ * @param {{ showSparklines?: boolean }} [options]
  */
-export function agentsPanel(view, host, settings) {
+export function agentsPanel(view, host, settings, { showSparklines = true } = {}) {
+  const hasSparkline = view.isWide && showSparklines;
   const workingCount = view.agents.filter((agent) => agent.state === "working").length;
   const busiestName = busiestAgentName(view.agents);
   const body = view.agents.length
-    ? [v_flex().gap(2).child(tableHeader(view.isWide)).children(view.agents.map((agent) => agentRow(agent, host, settings, view)))]
+    ? [v_flex().gap(2).child(tableHeader(view.isWide, hasSparkline)).children(view.agents.map((agent) => agentRow(agent, host, settings, view, hasSparkline)))]
     : [text("No coding agents are running on this host.", TOKYO_NIGHT.comment)];
   return panel({
     id: `agents-${host.label}`,

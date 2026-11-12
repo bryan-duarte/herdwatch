@@ -137,7 +137,7 @@ The first poll creates `~/.config/herdwatch/settings.conf` with every key commen
 | `TOP_N` | `30` | Processes per host |
 | `SSH_TIMEOUT` | `3` | Seconds before a poll of one host stops; keep it below 5 |
 | `STALE_SECONDS` | `30` | Age after which values show `?` |
-| `PANE_REFRESH` | `2` | Seconds between console redraws |
+| `PANE_REFRESH` | `2` | Seconds between checks of the console clock; the console redraws only when a time on screen changes |
 | `WORKTREE_ROOTS` | `~` | Folders to search on each host, separated by spaces, at most 8 |
 | `WORKTREE_DEPTH` | `7` | Folder levels to search below each root |
 | `WORKTREE_INTERVAL` | `300` | Seconds between worktree measures |

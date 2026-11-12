@@ -233,6 +233,24 @@
  * @property {Snapshot | null} snapshot
  * @property {BackendFailure | null} error
  *
+ * What store.js keeps in "herdwatch.state": one value, so one shared write per poll.
+ * @typedef {object} MonitorRecord
+ * @property {Snapshot | null} snapshot
+ * @property {BackendFailure | null} error
+ * @property {MonitorHistory} history
+ * @property {PublishedSignatures} signatures
+ *
+ * The signatures of the worktree and Docker lists in their own shared keys: a reader skips a key whose signature
+ * did not change.
+ * @typedef {object} PublishedSignatures
+ * @property {string} worktrees
+ * @property {string} docker
+ *
+ * @typedef {object} MonitorData
+ * @property {MonitorState | null} monitorState
+ * @property {MonitorHistory} history
+ * @property {PublishedSignatures} signatures
+ *
  * @typedef {"pin" | "unpin" | "kill" | "worktree-remove" | "docker-stop" | "docker-rm" | "docker-prune"} ActionName
  *
  * @typedef {"bad_input" | "busy" | "host_down" | "not_owner" | "still_running" | "dirty" | "agent_inside"
@@ -324,11 +342,23 @@
  * @property {AgentState} state
  * @property {(number | null)[]} cpuHistory
  *
+ * @typedef {object} WorktreeFlags
+ * @property {boolean} hasAgent
+ * @property {boolean} isStale
+ * @property {Set<WorktreeFilter>} filters  the filters that show this worktree
+ *
+ * @typedef {object} WorktreeFacts
+ * @property {Map<WorktreeItem, WorktreeFlags>} flagsOfWorktree
+ * @property {Record<WorktreeFilter, number>} counts
+ * @property {number} reclaimableKib  the space of the stale worktrees
+ * @property {number} largestKib
+ *
  * @typedef {object} ConsoleChoices
  * @property {string | null} host
  * @property {ConsoleTab} tab
  * @property {number} range
  * @property {WorktreeFilter} filter
+ * @property {ProcessSort} sort
  *
  * @typedef {object} BarView
  * @property {MonitorState | null} monitorState
@@ -348,6 +378,7 @@
  * @property {DockerByHost} docker
  * @property {Tunnel[]} tunnels
  * @property {Record<string, string>} portNotes  "<label>:<port>" → a tunnel that opens, or why the last port action failed
+ * @property {string | null} checkingPruneOn  the host whose Docker prune preview runs now
  * @property {HostSnapshot | null} host
  * @property {AgentView[]} agents
  * @property {ConsoleTab} tab
@@ -362,6 +393,8 @@
  * @property {(samples: number) => void} onRange
  * @property {(sort: ProcessSort) => void} onSort
  * @property {(filter: WorktreeFilter) => void} onWorktreeFilter
+ * @property {boolean} showAllWorktrees  false: the worktrees tab draws the first rows and a "show more" button
+ * @property {(cx: ModContext) => void} onShowAllWorktrees
  * @property {() => void} onClose
  * @property {PortActions} ports
  * @property {(host: HostSnapshot, pid: number) => void} onKill

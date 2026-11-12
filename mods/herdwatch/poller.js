@@ -3,7 +3,7 @@ import { measureDocker, measureWorktrees, runSnapshot } from "./backend.js";
 import { dockerSignature, splitDocker } from "./docker.js";
 import { nowInSeconds } from "./format.js";
 import { SECONDS_PER_SAMPLE, nextHistory } from "./history.js";
-import { publishDocker, publishPoll, publishPollError, publishWorktrees, readHistory, takePollLease } from "./store.js";
+import { publishDocker, publishPoll, publishPollError, publishWorktrees, readHistory, retireOldSharedKeys, takePollLease } from "./store.js";
 import { splitWorktrees, worktreesSignature } from "./worktrees.js";
 
 /** @typedef {import("./schemas.js").BackendRunResult} BackendRunResult */
@@ -56,6 +56,7 @@ export class Poller {
 
   /** @param {ModContext} cx */
   start(cx) {
+    retireOldSharedKeys();
     cx.timer.every(POLL_INTERVAL_MS, (timerCx) => this.tick(timerCx));
     this.tick(cx);
   }
@@ -104,7 +105,8 @@ export class Poller {
       this.publishedDockerSignature = currentDockerSignature;
       publishDocker(dockerByHost);
     }
-    publishPoll(lightSnapshot, nextHistory(readHistory(), snapshot, nowInSeconds()));
+    const signatures = { worktrees: currentWorktreesSignature, docker: currentDockerSignature };
+    publishPoll(lightSnapshot, nextHistory(readHistory(), snapshot, nowInSeconds()), signatures);
   }
 
   /** @param {ModContext} cx @param {MonitorSettings} settings */

@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { nowInSeconds } from "../mods/herdwatch/format.js";
-import { WORKTREE_FILTERS, deleteCheck, splitWorktrees, worktreeTotals, worktreesOrEmpty, worktreesSignature } from "../mods/herdwatch/worktrees.js";
+import { WORKTREE_FILTERS, WORKTREE_FILTER_NAMES, deleteCheck, splitWorktrees, worktreeFacts, worktreeTotals, worktreesOrEmpty, worktreesSignature } from "../mods/herdwatch/worktrees.js";
 import { agentProcess, snapshot, worktreeItem } from "./support/snapshots.js";
 
 const SECONDS_PER_DAY = 86400;
@@ -59,4 +59,21 @@ test("a worktree with an agent in it cannot be deleted, and the check says why",
   const worktree = worktreeItem({ absolute_path: "/home/dev/code/shop" });
   assert.deepEqual(deleteCheck(worktree, [agentView("/home/dev/code/shop/src")]), { canDelete: false, reason: "An agent works here. Stop it first." });
   assert.equal(deleteCheck(worktree, [agentView("/home/dev/code/other")]).canDelete, true);
+});
+
+test("worktreeFacts gives each filter the count of its own matches, and the flags of each row", () => {
+  const worktrees = [
+    worktreeItem({ absolute_path: "/home/dev/code/old", last_commit_at: daysAgo(30), size_kb: 500 }),
+    worktreeItem({ absolute_path: "/home/dev/code/busy", last_commit_at: daysAgo(30), size_kb: 900 }),
+    worktreeItem({ absolute_path: "/home/dev/code/merged", merged_into: "main", behind: 2, last_commit_at: daysAgo(0) }),
+    worktreeItem({ absolute_path: "/home/dev/code/dirty", changed_files: 4, last_commit_at: daysAgo(0), size_kb: 2000 }),
+  ];
+  const agents = [agentView("/home/dev/code/busy/src")];
+  const facts = worktreeFacts(worktrees, agents);
+  for (const name of WORKTREE_FILTER_NAMES) {
+    assert.equal(facts.counts[name], worktrees.filter((worktree) => WORKTREE_FILTERS[name].matches(worktree, agents)).length, name);
+  }
+  assert.deepEqual(facts.flagsOfWorktree.get(worktrees[1]), { hasAgent: true, isStale: false, filters: new Set(["all", "agent"]) });
+  assert.equal(facts.reclaimableKib, 500);
+  assert.equal(facts.largestKib, 2000);
 });

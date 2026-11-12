@@ -82,6 +82,11 @@ export function levelColor(level, normalColor = TOKYO_NIGHT.foreground) {
 const HEX_RADIX = 16;
 const CHANNEL_MAX = 255;
 const HEX_CHANNEL_WIDTH = 2;
+const MAX_CACHED_POSITIONS = 512;
+/** @type {WeakMap<readonly Color[], number[][]>} */
+const channelsOfStops = new WeakMap();
+/** @type {WeakMap<readonly Color[], Map<number, Color>>} */
+const colorsOfGradient = new WeakMap();
 
 /** @param {Color} color @returns {number[]} */
 function channels(color) {
@@ -95,17 +100,56 @@ function toColor(rgb) {
 }
 
 /**
+ * The gradients are fixed arrays, so each one is parsed once.
+ * @param {readonly Color[]} stops
+ */
+function stopChannels(stops) {
+  const known = channelsOfStops.get(stops);
+  if (known) return known;
+  const parsed = stops.map(channels);
+  channelsOfStops.set(stops, parsed);
+  return parsed;
+}
+
+/**
+ * @param {readonly Color[]} stops
+ * @param {number} clampedPosition
+ * @returns {Color}
+ */
+function mixedColor(stops, clampedPosition) {
+  const parsed = stopChannels(stops);
+  const scaled = clampedPosition * (stops.length - 1);
+  const lowerIndex = Math.min(Math.floor(scaled), stops.length - 2);
+  const fraction = scaled - lowerIndex;
+  const lower = parsed[lowerIndex];
+  const upper = parsed[lowerIndex + 1];
+  return toColor(lower.map((channel, index) => channel + (upper[index] - channel) * fraction));
+}
+
+/** @param {readonly Color[]} stops */
+function cachedColorsOf(stops) {
+  const known = colorsOfGradient.get(stops);
+  if (known) return known;
+  /** @type {Map<number, Color>} */
+  const colors = new Map();
+  colorsOfGradient.set(stops, colors);
+  return colors;
+}
+
+/**
  * The color at a position (0 to 1) along a gradient of evenly spaced stops.
+ * Meters and charts ask for the same positions on every render, so each answer is kept.
  * @param {readonly Color[]} stops
  * @param {number} position
  * @returns {Color}
  */
 export function gradientAt(stops, position) {
-  const clamped = Math.min(1, Math.max(0, position));
-  const scaled = clamped * (stops.length - 1);
-  const lowerIndex = Math.min(Math.floor(scaled), stops.length - 2);
-  const fraction = scaled - lowerIndex;
-  const lower = channels(stops[lowerIndex]);
-  const upper = channels(stops[lowerIndex + 1]);
-  return toColor(lower.map((channel, index) => channel + (upper[index] - channel) * fraction));
+  const clampedPosition = Math.min(1, Math.max(0, position));
+  const colors = cachedColorsOf(stops);
+  const known = colors.get(clampedPosition);
+  if (known) return known;
+  if (colors.size >= MAX_CACHED_POSITIONS) colors.clear();
+  const color = mixedColor(stops, clampedPosition);
+  colors.set(clampedPosition, color);
+  return color;
 }

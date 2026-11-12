@@ -38,6 +38,7 @@ const VERTICAL_GRADIENT_ANGLE = 0;
  */
 
 /** @typedef {{ index: number, sample: number }} ChartPoint */
+/** @typedef {{ x: `${number}%`, y: `${number}%` }} ChartCoordinate */
 
 /** @param {number} index @param {number} count */
 const xPercent = (index, count) => (count > 1 ? (index / (count - 1)) * PERCENT_SCALE : 0);
@@ -47,6 +48,21 @@ const yPercent = (sample, maximum) => PERCENT_SCALE - (Math.min(Math.max(sample 
 
 /** @param {number} percent */
 const percentCoordinate = (percent) => /** @type {`${number}%`} */ (`${percent.toFixed(2)}%`);
+
+/** @type {Map<number, `${number}%`[]>} */
+const xCoordinatesOfCount = new Map();
+
+/**
+ * The x of each slot of a chart with count slots: the same on every render with that range.
+ * @param {number} count
+ */
+function xCoordinates(count) {
+  const known = xCoordinatesOfCount.get(count);
+  if (known) return known;
+  const coordinates = Array.from({ length: count }, (_unused, index) => percentCoordinate(xPercent(index, count)));
+  xCoordinatesOfCount.set(count, coordinates);
+  return coordinates;
+}
 
 /**
  * Splits samples into runs without nulls, so a host that was down leaves a gap in the line.
@@ -70,35 +86,36 @@ function unbrokenRuns(samples) {
   return runs;
 }
 
-/** @param {(number | null)[]} samples */
-const drawableRuns = (samples) => unbrokenRuns(samples).filter((run) => run.length > 1);
+/**
+ * The runs of at least two points, as coordinates: computed once and shared by the area and its line.
+ * @param {(number | null)[]} samples @param {number} maximum
+ * @returns {ChartCoordinate[][]}
+ */
+function drawableRuns(samples, maximum) {
+  const xOfSlot = xCoordinates(samples.length);
+  return unbrokenRuns(samples).filter((run) => run.length > 1)
+    .map((run) => run.map((point) => ({ x: xOfSlot[point.index], y: percentCoordinate(yPercent(point.sample, maximum)) })));
+}
 
-/** @param {(number | null)[]} samples */
-const hasLine = (samples) => drawableRuns(samples).length > 0;
-
-/** @param {(number | null)[]} samples @param {number} maximum */
-function areaPath(samples, maximum) {
+/** @param {ChartCoordinate[][]} runs */
+function areaPath(runs) {
   const builder = PathBuilder.fill();
-  const count = samples.length;
-  for (const run of drawableRuns(samples)) {
-    builder.move_to(percentCoordinate(xPercent(run[0].index, count)), "100%");
-    run.forEach((point) => builder.line_to(percentCoordinate(xPercent(point.index, count)), percentCoordinate(yPercent(point.sample, maximum))));
-    builder.line_to(percentCoordinate(xPercent(run[run.length - 1].index, count)), "100%").close();
+  for (const run of runs) {
+    builder.move_to(run[0].x, "100%");
+    run.forEach((point) => builder.line_to(point.x, point.y));
+    builder.line_to(run[run.length - 1].x, "100%").close();
   }
   return builder.build();
 }
 
-/** @param {(number | null)[]} samples @param {number} maximum @param {number} widthPx @param {readonly number[] | null} dash */
-function linePath(samples, maximum, widthPx, dash = null) {
+/** @param {ChartCoordinate[][]} runs @param {number} widthPx @param {readonly number[] | null} dash */
+function linePath(runs, widthPx, dash = null) {
   const builder = PathBuilder.stroke(widthPx);
   if (dash) builder.dash_array(dash);
-  const count = samples.length;
-  for (const run of drawableRuns(samples)) {
+  for (const run of runs) {
     run.forEach((point, position) => {
-      const x = percentCoordinate(xPercent(point.index, count));
-      const y = percentCoordinate(yPercent(point.sample, maximum));
-      if (position === 0) builder.move_to(x, y);
-      else builder.line_to(x, y);
+      if (position === 0) builder.move_to(point.x, point.y);
+      else builder.line_to(point.x, point.y);
     });
   }
   return builder.build();
@@ -135,12 +152,14 @@ const gridLine = (percent) => div().absolute().left(0).right(0).top(`${percent}%
 export function areaChart({ samples, heightPx, gradient, maximum = PERCENT_SCALE, secondLine = null, secondLineColor = TOKYO_NIGHT.purple, markers = [], grid = true }) {
   const chart = div().relative().w_full().h(heightPx).rounded(3).bg(TOKYO_NIGHT.backgroundDark).overflow_hidden();
   if (grid) GRID_LINE_PERCENTS.forEach((percent) => chart.child(gridLine(percent)));
-  if (hasLine(samples)) {
-    chart.child(window.paint_path(areaPath(samples, maximum), verticalGradient(gradient, AREA_OPACITY)).absolute().size_full());
-    chart.child(window.paint_path(linePath(samples, maximum, LINE_WIDTH_PX), verticalGradient(gradient, 1)).absolute().size_full());
+  const runs = drawableRuns(samples, maximum);
+  if (runs.length) {
+    chart.child(window.paint_path(areaPath(runs), verticalGradient(gradient, AREA_OPACITY)).absolute().size_full());
+    chart.child(window.paint_path(linePath(runs, LINE_WIDTH_PX), verticalGradient(gradient, 1)).absolute().size_full());
   }
-  if (secondLine && hasLine(secondLine)) {
-    chart.child(window.paint_path(linePath(secondLine, maximum, SECOND_LINE_WIDTH_PX, SECOND_LINE_DASH), secondLineColor).absolute().size_full());
+  const secondRuns = secondLine ? drawableRuns(secondLine, maximum) : [];
+  if (secondRuns.length) {
+    chart.child(window.paint_path(linePath(secondRuns, SECOND_LINE_WIDTH_PX, SECOND_LINE_DASH), secondLineColor).absolute().size_full());
   }
   markers.forEach((marker) => chart.child(markerElement(marker)));
   if (Number.isFinite(samples[samples.length - 1])) chart.child(endDot(samples, maximum, gradient));
@@ -156,10 +175,11 @@ export function areaChart({ samples, heightPx, gradient, maximum = PERCENT_SCALE
  */
 export function sparkline(samples, color, { widthPx, heightPx }, maximum = PERCENT_SCALE) {
   const chart = div().relative().w(widthPx).h(heightPx).flex_none();
-  if (!hasLine(samples)) return chart;
+  const runs = drawableRuns(samples, maximum);
+  if (!runs.length) return chart;
   return chart
-    .child(window.paint_path(areaPath(samples, maximum), Background.solid(color).opacity(SPARKLINE_AREA_OPACITY)).absolute().size_full())
-    .child(window.paint_path(linePath(samples, maximum, SECOND_LINE_WIDTH_PX), color).absolute().size_full());
+    .child(window.paint_path(areaPath(runs), Background.solid(color).opacity(SPARKLINE_AREA_OPACITY)).absolute().size_full())
+    .child(window.paint_path(linePath(runs, SECOND_LINE_WIDTH_PX), color).absolute().size_full());
 }
 
 /**
