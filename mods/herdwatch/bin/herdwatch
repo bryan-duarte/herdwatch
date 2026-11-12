@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -u
+
+HERDWATCH_ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
+
+for library in state config record collect alerts worktrees snapshot; do
+  # shellcheck source=/dev/null
+  . "$HERDWATCH_ROOT/lib/$library.sh"
+done
+
+herdwatch_usage() {
+  echo "usage: herdwatch {snapshot|worktrees}" >&2
+}
+
+herdwatch_main() {
+  case "${1:-}" in
+    snapshot)
+      herdwatch_resolve_dirs || exit 1
+      herdwatch_snapshot
+      ;;
+    worktrees)
+      herdwatch_resolve_dirs || exit 1
+      herdwatch_measure_worktrees
+      ;;
+    *)
+      herdwatch_usage
+      exit 2
+      ;;
+  esac
+}
+
+herdwatch_main "$@"

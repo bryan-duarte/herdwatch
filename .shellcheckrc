@@ -1,0 +1,2 @@
+# bin/herdwatch sources every lib/*.sh into one shell, so globals cross file boundaries.
+disable=SC2034,SC2154

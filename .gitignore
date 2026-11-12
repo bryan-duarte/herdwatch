@@ -1,0 +1,5 @@
+.DS_Store
+*.tmp
+*.raw
+*.err
+mods/herdwatch/gpui-kit.d.ts
