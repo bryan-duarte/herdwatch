@@ -1,8 +1,9 @@
 import { div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
+import { agentMark } from "../agent-marks.js";
 import { percentLevel } from "../health.js";
 import { GRADIENTS, TOKYO_NIGHT, gradientAt, levelColor } from "../palette.js";
-import { AGENT_MARKER, METER_CELL_STEP_PX, fixedCell, meter, panel, pressable, rightCell, segmentedControl, text, titleRow, truncatedText, withIdleStates } from "./widgets.js";
+import { AGENT_MARKER, METER_CELL_STEP_PX, agentIcon, fixedCell, meter, panel, panelTitle, pressable, rightCell, segmentedControl, text, titleRow, truncatedText, uiIcon, withIdleStates } from "./widgets.js";
 
 /** @typedef {import("../schemas.js").ConsoleView} ConsoleView */
 /** @typedef {import("../schemas.js").HostSnapshot} HostSnapshot */
@@ -15,6 +16,7 @@ const MEMORY_PERCENT_AT_TOP_COLOR = 25;
 const ROW_HEIGHT_PX = 20;
 const CPU_METER_CELLS = 5;
 const TABLE_MAX_WIDTH_PX = 820;
+const PROCESS_MARK_SIZE_PX = 13;
 const COLUMN_WIDTH_PX = { marker: 14, pid: 64, cpuMeter: CPU_METER_CELLS * METER_CELL_STEP_PX, percent: 62 };
 const SORT_MARKER = "▾";
 /** @type {Record<ProcessSort, { column: string, name: string, key: string, button: string }>} */
@@ -52,6 +54,15 @@ function tableHeader(view) {
     .child(sortableHeader("mem", view));
 }
 
+/**
+ * An agent process shows its agent's mark; an agent run by an interpreter (node, bun, python) keeps the dot.
+ * @param {ProcessRow} process
+ */
+function processMarker(process) {
+  if (!process.agent) return "";
+  return agentMark(process.name).isDefault ? AGENT_MARKER : agentIcon(process.name, PROCESS_MARK_SIZE_PX);
+}
+
 /** @param {ProcessRow} process @param {MonitorSettings} settings @param {boolean} isWide */
 function processRow(process, settings, isWide) {
   const cpu = process.cpu ?? 0;
@@ -60,7 +71,7 @@ function processRow(process, settings, isWide) {
   const memoryShare = Math.min(memory, MEMORY_PERCENT_AT_TOP_COLOR) / MEMORY_PERCENT_AT_TOP_COLOR;
   const cpuColor = levelColor(percentLevel(Math.floor(cpu), settings), gradientAt(GRADIENTS.cpu, cpuShare));
   return h_flex().h(ROW_HEIGHT_PX).gap(8).items_center()
-    .child(fixedCell(COLUMN_WIDTH_PX.marker).text_color(TOKYO_NIGHT.green).child(process.agent ? AGENT_MARKER : ""))
+    .child(fixedCell(COLUMN_WIDTH_PX.marker).flex().items_center().text_color(TOKYO_NIGHT.green).child(processMarker(process)))
     .child(rightCell(String(process.pid ?? "?"), COLUMN_WIDTH_PX.pid, TOKYO_NIGHT.comment))
     .child(truncatedText(process.name, process.agent ? TOKYO_NIGHT.foreground : TOKYO_NIGHT.foregroundDark).flex_1())
     .when(isWide, (element) => element.child(meter(Math.min(cpu, PERCENT_SCALE), CPU_METER_CELLS, GRADIENTS.cpu)))
@@ -77,11 +88,12 @@ function processRow(process, settings, isWide) {
 export function processesPanel(view, host, settings) {
   const topProcesses = [...host.processes].sort((first, second) => sortValue(second, view.sort) - sortValue(first, view.sort)).slice(0, settings.top_n);
   return [
-    h_flex().justify_end().gap(8).items_center().child(text("sort", TOKYO_NIGHT.comment))
+    h_flex().justify_end().gap(8).items_center()
+      .child(titleRow(uiIcon("arrow-down-wide-narrow").text_color(TOKYO_NIGHT.comment), text("sort", TOKYO_NIGHT.comment)))
       .child(segmentedControl({ id: "sort", options: SORT_OPTIONS, selected: view.sort, onSelect: view.onSort })),
     panel({
       id: `procs-${host.label}`,
-      title: titleRow(text("procs", TOKYO_NIGHT.magenta).font_semibold(), text(`top ${topProcesses.length}`, TOKYO_NIGHT.comment)),
+      title: titleRow(panelTitle("activity", "procs", TOKYO_NIGHT.magenta), text(`top ${topProcesses.length}`, TOKYO_NIGHT.comment)),
       rightTitle: text(`by ${view.sort === "mem" ? "memory" : "cpu"}`, TOKYO_NIGHT.comment),
       body: [v_flex().max_w(TABLE_MAX_WIDTH_PX).gap(2).child(tableHeader(view)).children(topProcesses.map((process) => processRow(process, settings, view.isWide)))],
     }),

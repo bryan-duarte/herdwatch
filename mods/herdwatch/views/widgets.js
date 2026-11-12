@@ -1,6 +1,7 @@
-import { div, svg } from "gpui-kit";
+import { div, image, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { TOKYO_NIGHT, gradientAt } from "../palette.js";
+import { agentMark } from "../agent-marks.js";
+import { TOKYO_NIGHT, gradientAt, toolColor } from "../palette.js";
 
 /** @typedef {import("gpui-kit").Color} Color */
 /** @typedef {import("../schemas.js").Element} Element */
@@ -23,9 +24,19 @@ const ICON_BUTTON_SIZE_PX = 24;
 const ICON_SIZE_PX = 14;
 const KEYCAP_SIZE_PX = 16;
 const TAB_DOT_SIZE_PX = 7;
-const ROW_LABEL_WIDTH_PX = 38;
+const ROW_LABEL_WIDTH_PX = 54;
+const UI_ICON_FOLDER = "mods/herdwatch/icons/ui";
+const UI_ICON_SIZE_PX = 12;
+const AGENT_MARK_SIZE_PX = 14;
+export const MARK_ONLY_COLUMN_PX = 20;
 export const AGENT_MARKER = "●";
 const SUPERSCRIPT_DIGITS = ["⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"];
+
+/**
+ * @typedef {"gauge" | "bot" | "plug" | "folder-git-2" | "activity" | "server" | "cpu" | "memory-stick" | "hard-drive"
+ *   | "arrow-down-up" | "microchip" | "git-branch" | "history" | "arrow-down-wide-narrow" | "triangle-alert" | "layers"
+ *   | "archive" | "file-diff" | "arrow-down-to-line" | "keyboard"} UiGlyph
+ */
 
 /**
  * @template {string} Value
@@ -35,6 +46,7 @@ const SUPERSCRIPT_DIGITS = ["⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷",
  * @property {string} tooltip
  * @property {number | null} [count]
  * @property {Color | null} [dotColor]
+ * @property {UiGlyph} [glyph]
  */
 
 /**
@@ -44,10 +56,18 @@ const SUPERSCRIPT_DIGITS = ["⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷",
  * @property {ChoiceOption<Value>[]} options
  * @property {Value} selected
  * @property {(value: Value) => void} onSelect
+ * @property {boolean} [compact] in a narrow pane, a tab that is not open shows its glyph and count only
  */
 
 /** @param {number} number */
 export const superscript = (number) => String(number).split("").map((digit) => SUPERSCRIPT_DIGITS[Number(digit)]).join("");
+
+/**
+ * A Lucide glyph, drawn in the text color of its parent unless the caller sets one.
+ * @param {UiGlyph} glyph
+ * @param {number} sizePx
+ */
+export const uiIcon = (glyph, sizePx = UI_ICON_SIZE_PX) => svg(`${UI_ICON_FOLDER}/${glyph}.svg`).size(sizePx).flex_none();
 
 /** @param {string} content @param {Color} color */
 export const text = (content, color) => div().flex_none().text_color(color).child(content);
@@ -61,14 +81,18 @@ export const rightCell = (content, widthPx, color) => div().w(widthPx).flex_none
 /** @param {number} widthPx */
 export const fixedCell = (widthPx) => div().w(widthPx).flex_none();
 
-/** @param {string} label */
-export const rowLabel = (label) => fixedCell(ROW_LABEL_WIDTH_PX).text_color(TOKYO_NIGHT.comment).child(label);
+/** @param {string} label @param {UiGlyph} glyph */
+export const rowLabel = (label, glyph) => h_flex().w(ROW_LABEL_WIDTH_PX).flex_none().gap(5).items_center().text_color(TOKYO_NIGHT.comment)
+  .child(uiIcon(glyph)).child(label);
 
 /** @param {...Element} parts */
 export const titleRow = (...parts) => h_flex().gap(6).items_center().children(parts);
 
 /** @param {string} label @param {number} number @param {Color} color */
-export const hostTitle = (label, number, color) => titleRow(text(superscript(number), TOKYO_NIGHT.comment), text(label, color).font_semibold());
+export const hostTitle = (label, number, color) => titleRow(text(superscript(number), TOKYO_NIGHT.comment), uiIcon("server").text_color(color), text(label, color).font_semibold());
+
+/** @param {UiGlyph} glyph @param {string} label @param {Color} color */
+export const panelTitle = (glyph, label, color) => titleRow(uiIcon(glyph).text_color(color), text(label, color).font_semibold());
 
 /**
  * Makes an element a button: pointer, tooltip, and a click that does not reach the pane under it.
@@ -147,8 +171,30 @@ export function panel({ id, title, rightTitle = null, borderColor = TOKYO_NIGHT.
   return v_flex().id(id).when(fill, (element) => element.flex_1().min_h(0)).child(topEdge).child(content);
 }
 
-/** @param {string} label @param {Color} color */
-export const chip = (label, color) => div().flex_none().px(5).rounded(3).bg(TOKYO_NIGHT.highlight).text_color(color).child(label);
+/**
+ * An agent's own mark, the way Herdr's sidebar draws it: a picture as it is, a one-color glyph in the text color.
+ * An agent without a mark gets the Herdwatch sheep in the agent's own accent, so two unknown agents still look different.
+ * @param {string} agentName
+ * @param {number} sizePx
+ */
+export function agentIcon(agentName, sizePx = AGENT_MARK_SIZE_PX) {
+  const mark = agentMark(agentName);
+  if (!mark.tint) return image(mark.path).w(sizePx).h(sizePx).flex_none();
+  const glyphColor = mark.isDefault ? toolColor(agentName) : TOKYO_NIGHT.foreground;
+  return svg(mark.path).size(sizePx).flex_none().text_color(glyphColor);
+}
+
+/**
+ * The agent's mark and its short name; in a narrow pane the mark alone. The tooltip gives the full product name.
+ * @param {string} id
+ * @param {string} agentName
+ * @param {boolean} showName
+ */
+export function agentLabel(id, agentName, showName) {
+  return h_flex().id(id).min_w(0).gap(6).items_center().tooltip(agentMark(agentName).name)
+    .child(agentIcon(agentName))
+    .when(showName, (element) => element.child(truncatedText(agentName, TOKYO_NIGHT.foreground)));
+}
 
 /**
  * A key hint drawn as a keycap. It turns blue while the keys work (the pane has the keyboard).
@@ -201,18 +247,21 @@ export function iconButton({ id, icon, tooltip, hoverColor = TOKYO_NIGHT.foregro
  * @template {string} Value
  * @param {ChoiceGroup<Value>} group
  */
-export function tabStrip({ id, options, selected, onSelect }) {
+export function tabStrip({ id, options, selected, onSelect, compact = false }) {
   const tabs = options.map((option) => {
+    const isSelected = option.value === selected;
+    const showLabel = isSelected || !compact || !option.glyph;
     const tab = pressable(
       h_flex().id(`${id}-${option.value}`).h(CONTROL_HEIGHT_PX).px(9).gap(6).flex_none().items_center().rounded(CONTROL_RADIUS_PX).border_1()
         .text_size(11.5)
         .when(Boolean(option.dotColor), (element) => element.child(div().size(TAB_DOT_SIZE_PX).rounded(4).flex_none().bg(option.dotColor)))
-        .child(option.label)
+        .when(Boolean(option.glyph), (element) => element.child(uiIcon(option.glyph)))
+        .when(showLabel, (element) => element.child(option.label))
         .when(Number.isFinite(option.count), (element) => element.child(div().text_size(10.5).text_color(TOKYO_NIGHT.comment).child(String(option.count)))),
       option.tooltip,
       () => onSelect(option.value),
     );
-    if (option.value === selected) return tab.border_color(TOKYO_NIGHT.border).bg(TOKYO_NIGHT.highlight).text_color(TOKYO_NIGHT.foreground);
+    if (isSelected) return tab.border_color(TOKYO_NIGHT.border).bg(TOKYO_NIGHT.highlight).text_color(TOKYO_NIGHT.foreground);
     return withIdleStates(tab.border_color(TOKYO_NIGHT.backgroundDark).text_color(TOKYO_NIGHT.dim));
   });
   return h_flex().id(id).gap(2).min_w(0).items_center().overflow_x_scrollbar().children(tabs);
@@ -227,6 +276,7 @@ export function filterChips({ id, options, selected, onSelect }) {
   const chips = options.map((option) => {
     const chipButton = pressable(
       h_flex().id(`${id}-${option.value}`).h(20).px(8).gap(5).items_center().rounded(10).border_1().text_size(11)
+        .when(Boolean(option.glyph), (element) => element.child(uiIcon(option.glyph, 11)))
         .child(option.label)
         .when(Number.isFinite(option.count), (element) => element.child(String(option.count))),
       option.tooltip,

@@ -1,9 +1,9 @@
 import { div, uniform_list } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { age, ageSince, daysSince, storageSize } from "../format.js";
-import { GRADIENTS, TOKYO_NIGHT, gradientAt, toolColor } from "../palette.js";
+import { GRADIENTS, TOKYO_NIGHT, gradientAt } from "../palette.js";
 import { WORKTREE_FILTERS, WORKTREE_FILTER_NAMES, hasAgentIn, isStaleWorktree, worktreeTotals, worktreesOfHost } from "../worktrees.js";
-import { AGENT_MARKER, chip, filterChips, fixedCell, meter, panel, rightCell, text, titleRow, truncatedText } from "./widgets.js";
+import { AGENT_MARKER, MARK_ONLY_COLUMN_PX, agentLabel, filterChips, panelTitle, uiIcon, fixedCell, meter, panel, rightCell, text, titleRow, truncatedText } from "./widgets.js";
 
 /** @typedef {import("../schemas.js").AgentView} AgentView */
 /** @typedef {import("../schemas.js").ConsoleView} ConsoleView */
@@ -14,8 +14,10 @@ import { AGENT_MARKER, chip, filterChips, fixedCell, meter, panel, rightCell, te
 
 const PERCENT_SCALE = 100;
 const ROW_HEIGHT_PX = 26;
+/** @type {Record<import("../schemas.js").WorktreeFilter, import("./widgets.js").UiGlyph>} */
+const FILTER_GLYPHS = { all: "layers", stale: "archive", changed: "file-diff", agent: "bot", behind: "arrow-down-to-line" };
 const SIZE_METER_CELLS = 5;
-const COLUMN_WIDTH_PX = { size: 64, tool: 78, wideRepository: 110, narrowRepository: 80, changes: 52, age: 40 };
+const COLUMN_WIDTH_PX = { size: 64, tool: 96, wideRepository: 110, narrowRepository: 80, changes: 52, age: 40 };
 
 /**
  * @typedef {object} WorktreeRowContext
@@ -35,7 +37,7 @@ function worktreeRow(worktree, { agents, largestKib, isWide }) {
     .tooltip(`${worktree.path} · ↑${worktree.ahead ?? 0} ↓${worktree.behind ?? 0}`)
     .child(rightCell(storageSize(worktree.size_kb), COLUMN_WIDTH_PX.size, gradientAt(GRADIENTS.storage, sizePercent / PERCENT_SCALE)))
     .when(isWide, (element) => element.child(meter(sizePercent, SIZE_METER_CELLS, GRADIENTS.storage)))
-    .child(fixedCell(COLUMN_WIDTH_PX.tool).child(chip(worktree.tool, toolColor(worktree.tool))))
+    .child(fixedCell(isWide ? COLUMN_WIDTH_PX.tool : MARK_ONLY_COLUMN_PX).child(agentLabel(`wt-tool-${worktree.absolute_path}`, worktree.tool, isWide)))
     .child(fixedCell(isWide ? COLUMN_WIDTH_PX.wideRepository : COLUMN_WIDTH_PX.narrowRepository).truncate().text_color(TOKYO_NIGHT.blue).child(worktree.repository))
     .child(h_flex().flex_1().min_w(0).gap(4)
       .when(hasAgentIn(worktree, agents), (element) => element.child(text(AGENT_MARKER, TOKYO_NIGHT.green)))
@@ -61,6 +63,7 @@ function filterRow(view, host, worktrees) {
   const options = WORKTREE_FILTER_NAMES.map((name) => ({
     value: name,
     label: WORKTREE_FILTERS[name].label,
+    glyph: FILTER_GLYPHS[name],
     tooltip: WORKTREE_FILTERS[name].tooltip,
     count: worktrees.filter((worktree) => WORKTREE_FILTERS[name].matches(worktree, view.agents)).length,
   }));
@@ -70,7 +73,7 @@ function filterRow(view, host, worktrees) {
 /** @param {HostSnapshot} host @param {MonitorSettings} settings */
 function measuringPanel(host, settings) {
   const message = `Measuring worktrees. A measure runs every ${age(settings.worktree_interval)} and can take up to ${age(settings.worktree_timeout)}.`;
-  return panel({ id: `worktrees-${host.label}`, title: text("worktrees", TOKYO_NIGHT.teal).font_semibold(), body: [text(message, TOKYO_NIGHT.comment)] });
+  return panel({ id: `worktrees-${host.label}`, title: panelTitle("folder-git-2", "worktrees", TOKYO_NIGHT.teal), body: [text(message, TOKYO_NIGHT.comment)] });
 }
 
 /**
@@ -91,14 +94,14 @@ export function worktreesPanel(view, host, settings) {
   const body = [
     h_flex().gap(8).flex_wrap().justify_between().items_center()
       .child(filterRow(view, host, worktrees.items))
-      .child(titleRow(text("reclaimable from stale:", TOKYO_NIGHT.comment), text(storageSize(reclaimableKib), TOKYO_NIGHT.orange))),
+      .child(titleRow(uiIcon("archive").text_color(TOKYO_NIGHT.orange), text("reclaimable from stale:", TOKYO_NIGHT.comment), text(storageSize(reclaimableKib), TOKYO_NIGHT.orange))),
     worktreeList(view, host, shownWorktrees, context),
     text(measuredText, TOKYO_NIGHT.comment).text_size(10.5),
   ];
   if (worktrees.state === "failed") body.unshift(text(`Last measure failed: ${worktrees.error}`, TOKYO_NIGHT.red));
   return panel({
     id: `worktrees-${host.label}`,
-    title: titleRow(text("worktrees", TOKYO_NIGHT.teal).font_semibold(), text(storageSize(worktrees.total_kb), TOKYO_NIGHT.foreground)),
+    title: titleRow(panelTitle("folder-git-2", "worktrees", TOKYO_NIGHT.teal), text(storageSize(worktrees.total_kb), TOKYO_NIGHT.foreground)),
     rightTitle: text(ageSince(worktrees.measured_at), TOKYO_NIGHT.comment),
     body,
     fill: true,

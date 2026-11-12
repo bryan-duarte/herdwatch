@@ -89,6 +89,8 @@ Herdwatch finds agent processes by their command, by the script that `node`, `bu
 
 Claude Code (including Claude Desktop and remote sessions), Codex, Gemini CLI, Antigravity, Cursor Agent, GitHub Copilot CLI, OpenCode, Amp, Pi, PiG, omp, Crush, Goose, Factory Droid, Qwen Code, Kiro, Kimi Code, Cline, Auggie, Continue, Kilo Code, Grok, Devin, Letta Code, Hermes Agent, Qoder, Mastra Code, Jules, OpenHands, Plandex, Aider and DeepSeek Harness.
 
+Each agent shows its own mark in the tables, the same mark as in Herdr's sidebar. An agent without a mark gets the Herdwatch pixel sheep. The sources and licenses of the marks are in [`icons/agents/LICENSES.md`](mods/herdwatch/icons/agents/LICENSES.md).
+
 When Herdr already shows an agent in a pane on the same machine and folder, Herdwatch uses Herdr's state for it. Every other agent counts as `working` at 3% CPU or more, else `idle`.
 
 Is your agent missing? Open an issue with the output of `ps -o comm=,args= -p <pid>` for its process.

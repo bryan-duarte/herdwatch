@@ -10,7 +10,7 @@ import { portsPanel } from "./ports-panel.js";
 import { processesPanel } from "./processes-panel.js";
 import { systemPanel } from "./system-panel.js";
 import { worktreesPanel } from "./worktrees-panel.js";
-import { AGENT_MARKER, hostTitle, iconButton, keycap, panel, segmentedControl, tabStrip, text } from "./widgets.js";
+import { AGENT_MARKER, hostTitle, iconButton, keycap, panel, segmentedControl, tabStrip, text, titleRow, uiIcon } from "./widgets.js";
 
 /** @typedef {import("gpui-kit").Color} Color */
 /** @typedef {import("../schemas.js").ConsoleTab} ConsoleTab */
@@ -43,6 +43,7 @@ function header(view) {
     .child(text("herdwatch", TOKYO_NIGHT.foreground).font_semibold())
     .when(hasHostTabs, (element) => element.child(tabStrip({ id: "hosts", options: hostOptions, selected: view.host.label, onSelect: view.onHost })))
     .child(div().flex_1())
+    .child(uiIcon("history").text_color(TOKYO_NIGHT.comment))
     .child(segmentedControl({ id: "range", options: RANGE_OPTIONS, selected: String(view.rangeSamples), onSelect: (samples) => view.onRange(Number(samples)) }))
     .child(iconButton({
       id: "close-console",
@@ -56,16 +57,16 @@ function header(view) {
 /** @param {ConsoleView} view */
 function consoleTabs(view) {
   const { host } = view;
-  /** @type {{ value: ConsoleTab, label: string, count?: number | null, tooltip: string }[]} */
+  /** @type {import("./widgets.js").ChoiceOption<ConsoleTab>[]} */
   const options = [
-    { value: "overview", label: "overview", tooltip: "Charts and totals" },
-    { value: "agents", label: "agents", count: host?.agents.length ?? 0, tooltip: "Coding agent sessions on this host" },
-    { value: "ports", label: "ports", count: host?.ports.length ?? 0, tooltip: "Listening ports and the agent that owns each" },
-    { value: "worktrees", label: "worktrees", count: host ? worktreesOfHost(view.worktrees, host).items.length : 0, tooltip: "Git worktrees, size and health" },
-    { value: "procs", label: "procs", count: view.monitorState?.snapshot?.settings.top_n ?? null, tooltip: "Top processes" },
+    { value: "overview", label: "overview", glyph: "gauge", tooltip: "Charts and totals" },
+    { value: "agents", label: "agents", glyph: "bot", count: host?.agents.length ?? 0, tooltip: "Coding agent sessions on this host" },
+    { value: "ports", label: "ports", glyph: "plug", count: host?.ports.length ?? 0, tooltip: "Listening ports and the agent that owns each" },
+    { value: "worktrees", label: "worktrees", glyph: "folder-git-2", count: host ? worktreesOfHost(view.worktrees, host).items.length : 0, tooltip: "Git worktrees, size and health" },
+    { value: "procs", label: "procs", glyph: "activity", count: view.monitorState?.snapshot?.settings.top_n ?? null, tooltip: "Top processes" },
   ];
   return div().px(10).py(6).flex_none().bg(TOKYO_NIGHT.backgroundDark).border_b(1).border_color(TOKYO_NIGHT.highlight)
-    .child(tabStrip({ id: "console-tabs", options, selected: view.tab, onSelect: view.onTab }));
+    .child(tabStrip({ id: "console-tabs", options, selected: view.tab, onSelect: view.onTab, compact: !view.isWide }));
 }
 
 /** @param {string} key @param {string} action @param {boolean} isLive */
@@ -82,7 +83,8 @@ function footer(view) {
     .children(keyHint("m", "mem", view.hasKeyboard))
     .children(keyHint("1-4", "host", view.hasKeyboard))
     .when(Boolean(view.shortcut), (element) => element.children(keyHint(view.shortcut, "toggle", true)))
-    .child(div().flex_1().min_w(0).truncate().text_right().text_color(view.hasKeyboard ? TOKYO_NIGHT.blue : TOKYO_NIGHT.comment).child(keysHint));
+    .child(h_flex().flex_1().min_w(0).justify_end().gap(5).items_center().text_color(view.hasKeyboard ? TOKYO_NIGHT.blue : TOKYO_NIGHT.comment)
+      .child(uiIcon("keyboard")).child(div().min_w(0).truncate().child(keysHint)));
 }
 
 /**
@@ -102,7 +104,7 @@ function notice(view) {
 /** @param {{ color: Color, message: string }} banner */
 const noticePanel = (banner) => panel({
   id: "herdwatch-notice",
-  title: text("notice", banner.color),
+  title: titleRow(uiIcon("triangle-alert").text_color(banner.color), text("notice", banner.color)),
   borderColor: banner.color,
   body: [div().text_color(banner.color).child(banner.message)],
 });

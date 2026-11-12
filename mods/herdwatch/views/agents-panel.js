@@ -3,9 +3,9 @@ import { h_flex, v_flex } from "gpui-base";
 import { ageOrUnknown, homeRelative, minutesText } from "../format.js";
 import { percentLevel } from "../health.js";
 import { AGENT_HISTORY_SAMPLES, SECONDS_PER_SAMPLE, samplesInRange } from "../history.js";
-import { GRADIENTS, TOKYO_NIGHT, gradientAt, levelColor, toolColor } from "../palette.js";
+import { GRADIENTS, TOKYO_NIGHT, gradientAt, levelColor } from "../palette.js";
 import { sparkline } from "./charts.js";
-import { chip, fixedCell, panel, rightCell, text, truncatedText } from "./widgets.js";
+import { MARK_ONLY_COLUMN_PX, agentLabel, fixedCell, panel, panelTitle, rightCell, text, truncatedText } from "./widgets.js";
 
 /** @typedef {import("gpui-kit").Color} Color */
 /** @typedef {import("../schemas.js").AgentState} AgentState */
@@ -17,7 +17,7 @@ import { chip, fixedCell, panel, rightCell, text, truncatedText } from "./widget
 const PERCENT_SCALE = 100;
 const ROW_HEIGHT_PX = 24;
 const STATE_DOT_SIZE_PX = 7;
-const COLUMN_WIDTH_PX = { app: 84, state: 96, cpu: 54, uptime: 46 };
+const COLUMN_WIDTH_PX = { app: 96, state: 96, cpu: 54, uptime: 46 };
 const CPU_SPARKLINE_SIZE = { widthPx: 110, heightPx: 18 };
 const CPU_SPARKLINE_TITLE = `cpu ${minutesText(AGENT_HISTORY_SAMPLES * SECONDS_PER_SAMPLE)}`;
 /** @type {Record<AgentState, { label: string, color: Color }>} */
@@ -51,7 +51,7 @@ function agentRow(agent, host, settings, isWide) {
   const cpu = process.cpu ?? 0;
   const folder = homeRelative(process.cwd, host.home);
   return h_flex().id(`agent-${host.label}-${process.pid}`).h(ROW_HEIGHT_PX).gap(8).items_center().tooltip(folder)
-    .child(fixedCell(COLUMN_WIDTH_PX.app).child(chip(process.app, toolColor(process.app))))
+    .child(fixedCell(isWide ? COLUMN_WIDTH_PX.app : MARK_ONLY_COLUMN_PX).child(agentLabel(`agent-app-${host.label}-${process.pid}`, process.app, isWide)))
     .child(stateCell(agent.state))
     .child(h_flex().flex_1().min_w(0).gap(6)
       .child(text(process.repository || "", TOKYO_NIGHT.blue))
@@ -64,7 +64,7 @@ function agentRow(agent, host, settings, isWide) {
 /** @param {boolean} isWide */
 function tableHeader(isWide) {
   return h_flex().gap(8).text_color(TOKYO_NIGHT.comment)
-    .child(fixedCell(COLUMN_WIDTH_PX.app).child("agent"))
+    .child(fixedCell(isWide ? COLUMN_WIDTH_PX.app : MARK_ONLY_COLUMN_PX).child(isWide ? "agent" : ""))
     .child(fixedCell(COLUMN_WIDTH_PX.state).child("state"))
     .child(div().flex_1().child("branch"))
     .when(isWide, (element) => element.child(fixedCell(CPU_SPARKLINE_SIZE.widthPx).child(CPU_SPARKLINE_TITLE)))
@@ -85,7 +85,7 @@ export function agentsPanel(view, host, settings) {
     : [text("No coding agents are running on this host.", TOKYO_NIGHT.comment)];
   return panel({
     id: `agents-${host.label}`,
-    title: text("agents", TOKYO_NIGHT.magenta).font_semibold(),
+    title: panelTitle("bot", "agents", TOKYO_NIGHT.magenta),
     rightTitle: text(`${workingCount} working`, TOKYO_NIGHT.comment),
     body,
   });

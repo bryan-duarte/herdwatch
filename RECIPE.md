@@ -1,8 +1,8 @@
-# Herdwatch - SSH hosts monitor
+# Herdwatch - SSH server monitor for coding agents
 
-A btop-style monitor for the SSH hosts where your coding agents run, in Omarchy's Tokyo Night colors. A pill at the right end of the tab row shows each host's CPU. A click on it, or `cmd-shift-m`, opens the tabbed console beside your terminal: CPU and memory history charts with agent events, per-core load, disk and network rates, GPU, the coding agent sessions on the host, the ports they listen on, the size and health of every git worktree, and the top processes.
+A btop and htop style system monitor for remote servers, VPS and homelab machines where AI agents like Claude Code and Codex run. A pill in the tab row shows each host's CPU; a click or `cmd-shift-m` opens a Tokyo Night dashboard: CPU, memory (RAM), swap, disk, network and GPU charts, per-core load, agent sessions and their state, listening ports, git worktree disk usage, top processes and hot host alerts. A multi-host SSH monitor and resource monitor, with nothing to install on the server.
 
-![Herdwatch - SSH hosts monitor](preview.png)
+![Herdwatch - SSH server monitor for coding agents](preview.png)
 
 ## What you see
 
@@ -14,11 +14,13 @@ All colors are fixed Tokyo Night: background `#1a1b26`, dark `#16161e`, highligh
 - **Console header** (40 px, `#16161e`): `herdwatch`, one tab per host with a health dot (green, yellow at WARN, red at CRIT or down), the range control `2m | 5m | 10m`, and a framed close button.
 - **Tab strip**: `overview`, `agents N`, `ports N`, `worktrees N`, `procs 30`. The open tab is framed and filled.
 - **overview**: a btop box titled `¹kali` with `linux · up 3h` in the top edge. Inside: a CPU area chart (green to red gradient, end dot, markers for agent start, agent end and alerts) and a memory area chart (cyan to magenta) with swap as a dashed purple line. Both are 58 px high and grow from the right. Then rows: `cores` (one cell per core, colored and dimmed by load), `disk` (20-cell meter, percent, free space, read and write rate), `net` (two sparklines, down and up rate), `gpu` (when the host has an NVIDIA GPU), `wt` (worktree total, count, stale count). Below: the agents box.
-- **agents**: one row per coding agent session: app chip, state (`working` blue, `needs you` yellow, `idle` gray, `done` green), repository and branch (or the folder), a 2.5-minute CPU sparkline (wide panes), CPU and uptime.
+- **agents**: one row per coding agent session: the agent's mark and name, state (`working` blue, `needs you` yellow, `idle` gray, `done` green), repository and branch (or the folder), a 2.5-minute CPU sparkline (wide panes), CPU and uptime.
 - **ports**: listening TCP ports, agent-owned first: `:3000`, process, the agent that started it (found through the parent chain), and that agent's worktree. Ports of other users show `other user`.
 - **worktrees**: filter chips with counts (`all`, `stale > 14d`, `uncommitted`, `agent running`, `behind upstream`), the space reclaimable from stale worktrees, and a virtual list that fills the free height of the pane: size (teal to red by share of the largest), share meter, tool chip, repository, branch (`●` when an agent works there), `±changed files` or `clean`, and days since the last commit (orange when stale).
-- **procs**: a `CPU | MEM` sort control, then a table of the top 30: agent `●`, pid, program, CPU meter (wide panes), `cpu%` and `mem%` headers that also sort.
+- **procs**: a `CPU | MEM` sort control, then a table of the top 30: the agent's mark (or `●` for an agent run by node, bun or python), pid, program, CPU meter (wide panes), `cpu%` and `mem%` headers that also sort.
 - **Footer**: `● agent │ [c] cpu [m] mem [1-4] host [⌘⇧M] toggle`, and `keys on` or `click the pane for keys`.
+- **Agent marks**: each agent shows its own mark at 14 px, the way Herdr's sidebar draws it (a picture as it is, a one-color glyph in the text color). The marks of agents in Herdr's program table come from Herdr's `icons/` folder; the mod ships the others in `icons/agents/` (sources and licenses in `icons/agents/LICENSES.md`). An agent without a mark gets the Herdwatch pixel sheep in the agent's own accent color.
+- **Navigation glyphs**: 12 px Lucide glyphs (ISC, in `icons/ui/`) in the text color of their control, one glyph per concept: `gauge` overview, `bot` agents, `plug` ports, `folder-git-2` worktrees, `activity` procs, `server` hosts, `cpu`, `memory-stick`, `hard-drive`, `arrow-down-up` network, `microchip` GPU, `git-branch`, `history` range, `arrow-down-wide-narrow` sort, `triangle-alert` notice, `keyboard` keys, and `layers`, `archive`, `file-diff`, `bot`, `arrow-down-to-line` on the worktree filters. In a pane narrower than 560 px, a tab that is not open shows only its glyph and count, and the agent columns show only the mark; the tooltips give the names.
 
 ## How it behaves
 
