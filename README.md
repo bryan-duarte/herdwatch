@@ -1,16 +1,38 @@
-<p align="center"><img src="assets/cover-app-icon.png" alt="Herdwatch, an SSH hosts monitor for Herdr" width="100%"></p>
+<p align="center"><img src="preview.png" alt="Herdwatch: an SSH server monitor for coding agents, inside Herdr" width="100%"></p>
 
-# Herdwatch
+<h1 align="center">Herdwatch</h1>
 
-Your coding agents run on remote machines. From Herdr you cannot see if a host is out of memory, which agent waits for you, which dev server still holds a port, how much disk the old worktrees take, or what Docker keeps on the disk.
+<p align="center"><b>See every server your coding agents run on, without leaving Herdr.</b></p>
 
-**Watch.** Herdwatch shows all of this for every SSH host, in one console inside [Herdr](https://herdr.dev). A pill in the tab row gives the CPU and memory of each host at a glance.
+<p align="center">macOS and Linux &nbsp;·&nbsp; nothing to install on your servers &nbsp;·&nbsp; MIT</p>
 
-**Act.** Kill a process tree, pin a port and get an alert when it stops, open a remote port in your browser, delete a merged worktree, and stop, remove or prune Docker. Every action asks first.
+<p align="center"><a href="#install">Install</a> &nbsp;·&nbsp; <a href="#add-your-hosts">Add your hosts</a> &nbsp;·&nbsp; <a href="#use-it">Use it</a> &nbsp;·&nbsp; <a href="#settings">Settings</a> &nbsp;·&nbsp; <a href="#troubleshooting">Troubleshooting</a></p>
 
-**Know why.** When a host fails, Herdwatch tells you why and what to do. Your hosts need no daemon and no install: Herdwatch uses `ssh` and the tools that are already there.
+Your coding agents run on remote machines. From [Herdr](https://herdr.dev) you cannot see if a host is out of memory, which agent waits for you, which dev server still holds a port, how much disk the old worktrees take, or what Docker keeps on the disk.
 
-It is a Herdr.app mod: JavaScript for the panel, Bash and POSIX `sh` for the polling.
+Herdwatch puts all of it in one console beside your terminal, for every SSH host. You can act from the same place: kill a process tree, pin a port, open a remote port in your browser, delete a merged worktree, prune Docker. It needs only `ssh`. There is no daemon and nothing to install on the server.
+
+## A tour
+
+The pictures use sample hosts and numbers.
+
+<p><img src="assets/card-pill.png" alt="The pill in Herdr's tab row shows the CPU and memory of each host; a click opens the console" width="100%"></p>
+
+<p><img src="assets/card-resources.png" alt="The overview: per-core load, CPU and memory history, disk, network and the worktree total" width="100%"></p>
+
+<p><img src="assets/card-agents.png" alt="The agents view: each coding agent with its state, branch, and the CPU and memory of its process tree" width="100%"></p>
+
+<p><img src="assets/card-ports.png" alt="The ports view: listening ports with their agents, a pinned port that is down, and the alert toast" width="100%"></p>
+
+<p><img src="assets/card-worktrees.png" alt="The worktrees view: sizes, merged tags, uncommitted files and delete buttons" width="100%"></p>
+
+<p><img src="assets/card-docker.png" alt="The docker view: containers, image and volume sizes, and the space a prune frees" width="100%"></p>
+
+<p><img src="assets/card-procs.png" alt="The procs view: the top processes by CPU with program logos and kill buttons" width="100%"></p>
+
+<p><img src="assets/card-actions.png" alt="The Remove worktree dialog over the worktrees view, with the option to delete the branch" width="100%"></p>
+
+<p><img src="assets/card-errors.png" alt="A host that is down, with the reason, the next step and two bad config lines" width="100%"></p>
 
 ## Install
 
@@ -55,49 +77,15 @@ ssh -o BatchMode=yes me@devbox true
 
 To watch the Mac or Linux box Herdr runs on, add `localhost`. This needs a running SSH server (on macOS: System Settings, Sharing, Remote Login).
 
-## What you get
+## Use it
 
-The pictures below use sample hosts and numbers.
+On the first install, Herdr docks the pill as a thin strip at the top of the window. To put it in the tab row, see [Put the pill in the tab row](#put-the-pill-in-the-tab-row). Click the pill, or press `cmd-shift-m`, to open the console. The focus stays in your terminal.
 
-### The pill
-
-![The pill: CPU and memory of each host, and a host that is down](assets/view-pill.png)
-
-The compact view. On the first install, Herdr docks it as a thin strip at the top of the window. It shows each host's CPU and memory, each with its icon and a 4-cell meter, with `!` at 70% and `!!` at 90%. A down host shows `✕`, and a `!` after the hosts means the last poll failed (hover it to read why). Click the pill, or press `cmd-shift-m`, to open the console beside your terminal. The focus stays in your terminal. To put the pill in the tab row, see [Layout](#put-the-pill-in-the-tab-row).
-
-### The console
-
-It has one tab per host and six views. Keys (click the console first): `c` and `m` sort by CPU or memory, `1` to `4` choose a host. The range control switches the charts between 2, 5 and 10 minutes. Hover a host tab to see the SSH round-trip time.
-
-**overview.** Per-core load, CPU and memory history charts with agent start and finish markers, disk use and I/O, network rates, GPU (NVIDIA), the worktree total and the agents on the host.
-
-![The overview view](assets/view-overview.png)
-
-**agents.** Each coding agent session: app, state (`working`, `needs you`, `idle`, `done`), repository and branch, a CPU sparkline, and the CPU and memory of the agent's whole process tree. The title names the agent that uses the most.
-
-![The agents view](assets/view-agents.png)
-
-**ports.** Listening TCP ports, and the agent that started each one (found through the parent processes). Pinned ports stay on top and show `down` when they stop. `open` forwards the port to your browser.
-
-![The ports view](assets/view-ports.png)
-
-**worktrees.** Every git worktree with its size, uncommitted files and age, with filters for stale, merged, uncommitted, agent running and behind. A `merged` tag marks the ones you are done with. The tooltip gives the created date and the last git activity.
-
-![The worktrees view](assets/view-worktrees.png)
-
-**docker.** Containers with their state and size, the images and volumes, and the space that a prune frees.
-
-![The docker view](assets/view-docker.png)
-
-**procs.** The top 30 processes by CPU or memory. Agent processes are marked, and common programs (Node.js, Python, PostgreSQL, Redis, nginx, Docker and others) show their logo.
-
-![The procs view](assets/view-procs.png)
+The console has one tab per host and six views: `overview`, `agents`, `ports`, `worktrees`, `docker` and `procs`. Keys (click the console first): `c` and `m` sort by CPU or memory, `1` to `4` choose a host. The range control switches the charts between 2, 5 and 10 minutes. Hover a host tab to see the SSH round-trip time, or the reason it fails.
 
 ### Actions
 
 Each action opens a dialog that says what it touches, and does nothing until you confirm (`Enter`) or cancel (`Esc`).
-
-![The kill, remove worktree and prune dialogs](assets/view-dialogs.png)
 
 | Where | Button | What it does |
 | --- | --- | --- |
@@ -109,12 +97,6 @@ Each action opens a dialog that says what it touches, and does nothing until you
 | `docker` | prune | Deletes unused images. Unused volumes go only if you tick them, because their data is lost for good |
 
 Herdwatch checks each action again on the host right before it runs, and it never touches the main checkout of a repository. The same actions work from a terminal: `bin/herdwatch action {pin|unpin|kill|worktree-remove|docker-stop|docker-rm|docker-prune} <label> [args]`.
-
-### Clear errors
-
-A host that fails shows the reason and the next step, for example `The name devbox.lan does not resolve. Check the target of devbox in hosts.conf.` A bad line in a config file shows the file, the line and the value that Herdwatch uses instead.
-
-![A host that is down, with its reason, and the host notes](assets/view-errors.png)
 
 ### Worktree storage
 
