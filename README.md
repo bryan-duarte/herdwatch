@@ -2,9 +2,11 @@
 
 # Herdwatch
 
-Your coding agents run on remote machines. From Herdr you cannot see if a host is out of memory, which agent waits for you, which dev server still holds a port, or how much disk the old worktrees take.
+Your coding agents run on remote machines. From Herdr you cannot see if a host is out of memory, which agent waits for you, which dev server still holds a port, how much disk the old worktrees take, or what Docker keeps on the disk.
 
-Herdwatch shows all of this for every SSH host, in one console inside [Herdr](https://herdr.dev). A pill in the tab row gives the CPU of each host at a glance.
+Herdwatch shows all of this for every SSH host, in one console inside [Herdr](https://herdr.dev). A pill in the tab row gives the CPU and memory of each host at a glance.
+
+You can also act from the console: kill a process tree, pin a port and get an alert when it stops, open a remote port in your browser, delete a merged worktree, and stop, remove or prune Docker. Every action asks first. When a host fails, Herdwatch tells you why and what to do.
 
 Your hosts need no daemon and no install. Herdwatch uses `ssh` and the tools that are already there.
 
@@ -61,17 +63,33 @@ To watch the Mac or Linux box Herdr runs on, add `localhost`. This needs a runni
 
 ![Many hosts](assets/cover-fleet.png)
 
-**The console.** It has one tab per host and five views:
+**The console.** It has one tab per host and six views:
 
 | View | What it shows |
 | --- | --- |
 | `overview` | CPU and memory history charts with agent start and finish markers, per-core load, disk use and I/O, network rates, GPU (NVIDIA), uptime |
-| `agents` | Each coding agent session on the host: app, state (`working`, `needs you`, `idle`, `done`), repository, branch, CPU, uptime |
-| `ports` | Listening TCP ports, and the agent that started each one (found through the parent processes) |
-| `worktrees` | Every git worktree with its size, uncommitted files, ahead/behind and age, with filters for stale, uncommitted, agent running and behind |
-| `procs` | The top 30 processes by CPU or memory; agent processes are marked |
+| `agents` | Each coding agent session on the host: app, state (`working`, `needs you`, `idle`, `done`), repository, branch, and the CPU and memory of the agent's whole process tree, uptime |
+| `ports` | Listening TCP ports, and the agent that started each one (found through the parent processes). Pinned ports stay on top, and show `down` when they stop |
+| `worktrees` | Every git worktree with its size, uncommitted files, ahead/behind and age, with filters for stale, merged, uncommitted, agent running and behind. The tooltip gives the created date and the last git activity |
+| `docker` | Containers with their state and size, images and volumes, and the space that a prune frees |
+| `procs` | The top 30 processes by CPU or memory; agent processes are marked, and common programs (Node.js, Python, PostgreSQL, Redis, nginx and others) show their logo |
 
-Keys in the console (click it first): `c` and `m` sort by CPU or memory, `1` to `4` choose a host. The range control switches the charts between 2, 5 and 10 minutes.
+Keys in the console (click it first): `c` and `m` sort by CPU or memory, `1` to `4` choose a host. The range control switches the charts between 2, 5 and 10 minutes. Hover a host tab to see the SSH round-trip time.
+
+**Actions.** Each action opens a dialog that says what it touches, and does nothing until you confirm (`Enter`) or cancel (`Esc`).
+
+| Where | Button | What it does |
+| --- | --- | --- |
+| `agents`, `ports`, `procs` | kill | Sends TERM to the process and every process under it. If some stay alive, the dialog offers `Force kill` |
+| `ports` | pin | Keeps the port on top. When it stops listening, you get one notification and a red `down` row |
+| `ports` | open | Opens the port in your browser through an SSH tunnel on `127.0.0.1`. A second click on a forwarded port opens it again; stop closes the tunnel |
+| `worktrees` | delete | Removes the worktree, and its branch if you tick the box. It warns about uncommitted files, and it refuses while an agent works there |
+| `docker` | stop, remove | Stops a running container, or removes a stopped one |
+| `docker` | prune | Deletes unused images. Unused volumes go only if you tick them, because their data is lost for good |
+
+Herdwatch checks each action again on the host right before it runs, and it never touches the main checkout of a repository. The same actions work from a terminal: `bin/herdwatch action {pin|unpin|kill|worktree-remove|docker-stop|docker-rm|docker-prune} <label> [args]`.
+
+**Clear errors.** A host that fails shows the reason and the next step, for example `The name devbox.lan does not resolve. Check the target of devbox in hosts.conf.` A bad line in a config file shows the file, the line and the value that Herdwatch uses instead.
 
 ![Worktree storage](assets/cover-disk-hunter.png)
 
@@ -117,7 +135,12 @@ The first poll creates `~/.config/herdwatch/settings.conf` with every key commen
 | `WORKTREE_DEPTH` | `7` | Folder levels to search below each root |
 | `WORKTREE_INTERVAL` | `300` | Seconds between worktree measures |
 | `WORKTREE_TIMEOUT` | `120` | Seconds before the measure of one host stops |
+| `MERGED_BRANCHES` | `main master develop trunk` | Branches that count for the `merged` tag; the default branch of `origin` is tried first |
+| `DOCKER` | `on` | The Docker tab; `off` stops the Docker measure |
+| `DOCKER_INTERVAL` | `300` | Seconds between Docker measures |
 | `AGENT_PATTERN` | the agent commands, `node`, `bun`, `python` | Regex that marks agent processes in `procs` |
+
+Pinned ports live in `~/.config/herdwatch/pins.conf`, one `<label> <port>` per line. The pin button writes this file for you.
 
 ## Put the pill in the tab row
 
@@ -144,8 +167,10 @@ On each host:
 
 - Every 5 s it runs a POSIX `sh` script over `ssh` stdin. The script uses `ps`, `top`, `df`, `ss` or `lsof`, `git rev-parse` and `/proc`. It takes about 1 s and writes only a temporary folder, which it deletes when it ends.
 - Every 5 minutes it runs `find`, `du` and `git status` under `WORKTREE_ROOTS`. On large worktrees this is the heaviest part, so raise `WORKTREE_INTERVAL` if you need to.
+- Every 5 minutes, if `docker` is there, it runs `docker info`, `docker ps -a`, `docker images` and `docker system df`.
+- Only when you confirm an action, it runs a fixed script for that action: `kill`, `git worktree remove` and `git branch -d`, or `docker stop`, `docker rm` and `docker image prune` / `docker volume prune`. The values from the console go in as quoted arguments, and only if they match what the last poll saw.
 
-Herdwatch sends no data anywhere else.
+Herdwatch sends no data anywhere else. An SSH tunnel for the open button listens on `127.0.0.1` only.
 
 ## Troubleshooting
 
@@ -153,7 +178,9 @@ Herdwatch sends no data anywhere else.
 | --- | --- | --- |
 | `herdwatch: add hosts` | `hosts.conf` has no hosts | Add a host |
 | `auth` on a host | SSH refused the key login | Run `ssh -o BatchMode=yes <target> true` and fix the key |
-| `✕` on a host | The host did not answer within `SSH_TIMEOUT` | Check the network, or raise `SSH_TIMEOUT` (below 5) |
+| `✕` on a host | The host did not answer | Hover the host, or open its tab: the console gives the reason and the next step |
+| `!` in the pill | The last poll failed | Hover it to read why |
+| A yellow line with a file and a line number | A bad value in `settings.conf`, `hosts.conf` or `pins.conf` | Fix that line; until then Herdwatch uses the value it names |
 | `?` on a host | The values are older than `STALE_SECONDS` | The polls stopped: check `~/.local/state/herdwatch/herdwatch.log` |
 | No worktrees | The first measure is still running, or `WORKTREE_ROOTS` is wrong | Wait 5 minutes, then check the roots |
 
