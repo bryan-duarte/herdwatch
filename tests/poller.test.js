@@ -2,10 +2,8 @@ import { strict as assert } from "node:assert";
 import { afterEach, beforeEach, test } from "node:test";
 import { fakeHerdr, resetFakeHerdr } from "herdr";
 import { Poller } from "../mods/herdwatch/poller.js";
-import { loadConsoleChoices, readDocker, readHistory, readMonitorState, readWorktrees, takePollLease } from "../mods/herdwatch/store.js";
+import { loadConsoleChoices, readDocker, readHistory, readMonitorState, readWorktrees, resetPollLease, retireOldSharedKeys, takePollLease } from "../mods/herdwatch/store.js";
 import { snapshot } from "./support/snapshots.js";
-
-const POLL_LEASE_KEY = "herdwatch.poller";
 
 /** A stand-in for the GPUI context: spawn runs the task, and the test waits for all of them. */
 function fakeContext() {
@@ -26,7 +24,10 @@ function backendPrints(backendSnapshot) {
   };
 }
 
-beforeEach(resetFakeHerdr);
+beforeEach(() => {
+  resetFakeHerdr();
+  resetPollLease();
+});
 afterEach(() => {
   delete globalThis.localStorage;
 });
@@ -41,6 +42,7 @@ test("a poll publishes the light snapshot, the history and the worktree lists", 
   assert.deepEqual(state.snapshot.hosts[0].worktrees.items, []);
   assert.equal(readWorktrees().devbox.items.length, 1);
   assert.deepEqual(readHistory().hosts.devbox.cpu, [40]);
+  assert.deepEqual([...fakeHerdr.sharedState.keys()].sort(), ["herdwatch.docker", "herdwatch.state", "herdwatch.worktrees"]);
   assert.deepEqual(fakeHerdr.execCalls[0].args, ["/home/dev/.config/herdr-app/mods/herdwatch/bin/herdwatch", "snapshot"]);
 });
 
@@ -66,6 +68,7 @@ test("a failed poll keeps the last snapshot next to the error", async () => {
   const state = readMonitorState();
   assert.deepEqual(state.error, { reason: "mod_bug", detail: "herdwatch: unexpected end of file" });
   assert.equal(state.snapshot.hosts[0].label, "devbox");
+  assert.deepEqual(readHistory().hosts.devbox.cpu, [40]);
 });
 
 test("a due worktree measure runs the backend worktrees command", async () => {
@@ -80,28 +83,40 @@ test("a due worktree measure runs the backend worktrees command", async () => {
 
 test("a copy does not poll while another copy holds a fresh lease", async () => {
   backendPrints(snapshot());
-  const now = Math.floor(Date.now() / 1000);
-  fakeHerdr.sharedState.set(POLL_LEASE_KEY, { owner: "the-pill", at: now });
+  takePollLease("the-pill", Math.floor(Date.now() / 1000));
   const cx = fakeContext();
   new Poller().tick(cx);
   await cx.settle();
   assert.equal(fakeHerdr.execCalls.length, 0);
 });
 
-test("the poll lease goes to another copy once it is old or broken", () => {
-  fakeHerdr.sharedState.set(POLL_LEASE_KEY, { owner: "the-pill", at: 1000 });
+test("the poll lease goes to another copy once it is old", () => {
+  assert.equal(takePollLease("the-pill", 1000), true);
   assert.equal(takePollLease("console", 1005), false);
   assert.equal(takePollLease("the-pill", 1005), true);
   assert.equal(takePollLease("console", 1017), true);
-  fakeHerdr.sharedState.set(POLL_LEASE_KEY, { owner: 42 });
-  assert.equal(takePollLease("the-pill", 1018), true);
+  assert.equal(takePollLease("the-pill", 1018), false);
+  assert.equal(takePollLease("the-pill", 1030), true);
+  assert.equal(fakeHerdr.sharedState.size, 0);
+});
+
+test("the old shared keys are cleared once, and the live keys stay", () => {
+  fakeHerdr.sharedState.set("herdwatch.history", { hosts: {} });
+  fakeHerdr.sharedState.set("sheepdog.state", { snapshot: null });
+  fakeHerdr.sharedState.set("herdwatch.state", { snapshot: null });
+  retireOldSharedKeys();
+  assert.equal(fakeHerdr.sharedState.get("herdwatch.history"), null);
+  assert.equal(fakeHerdr.sharedState.get("sheepdog.state"), null);
+  assert.deepEqual(fakeHerdr.sharedState.get("herdwatch.state"), { snapshot: null, history: { hosts: {} } });
 });
 
 test("console choices fall back to the defaults for unknown values", () => {
-  globalThis.localStorage = { getItem: () => JSON.stringify({ host: "devbox", tab: "graphs", range: 24, filter: "stale" }) };
-  assert.deepEqual(loadConsoleChoices(), { host: "devbox", tab: "overview", range: 24, filter: "stale" });
+  globalThis.localStorage = { getItem: () => JSON.stringify({ host: "devbox", tab: "graphs", range: 24, filter: "stale", sort: "mem" }) };
+  assert.deepEqual(loadConsoleChoices(), { host: "devbox", tab: "overview", range: 24, filter: "stale", sort: "mem" });
+  globalThis.localStorage = { getItem: () => JSON.stringify({ sort: "pid" }) };
+  assert.equal(loadConsoleChoices().sort, "cpu");
   globalThis.localStorage = { getItem: () => "{broken" };
-  assert.deepEqual(loadConsoleChoices(), { host: null, tab: "overview", range: 60, filter: "all" });
+  assert.deepEqual(loadConsoleChoices(), { host: null, tab: "overview", range: 60, filter: "all", sort: "cpu" });
 });
 
 test("a pinned port that stops gives its own notification", async () => {
@@ -138,4 +153,23 @@ test("a backend that runs past its time limit counts as a timeout", async () => 
     Date.now = realNow;
   }
   assert.equal(readMonitorState().error.reason, "backend_timeout");
+});
+
+test("a known list signature skips the shared read, and a new signature reads again", () => {
+  fakeHerdr.sharedState.set("herdwatch.worktrees", { devbox: { state: "ok", measured_at: 900, reason: "", error: "", total_kb: 0, items: [] } });
+  const first = readWorktrees("devbox:ok:900:0");
+  assert.equal(readWorktrees("devbox:ok:900:0"), first);
+  fakeHerdr.sharedState.set("herdwatch.worktrees", { devbox: { state: "ok", measured_at: 960, reason: "", error: "", total_kb: 0, items: [] } });
+  assert.equal(readWorktrees("devbox:ok:960:0").devbox.measured_at, 960);
+  assert.notEqual(readWorktrees(), readWorktrees());
+});
+
+test("a poll stores the signatures of the lists it published", async () => {
+  backendPrints(snapshot());
+  const cx = fakeContext();
+  new Poller().tick(cx);
+  await cx.settle();
+  const { signatures } = fakeHerdr.sharedState.get("herdwatch.state");
+  assert.equal(readWorktrees(signatures.worktrees).devbox.items.length, 1);
+  assert.equal(readDocker(signatures.docker).devbox.state, "ok");
 });

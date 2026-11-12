@@ -5,17 +5,22 @@ import { isHostWorktrees, isRecord } from "./snapshot.js";
 /** @typedef {import("./schemas.js").HostSnapshot} HostSnapshot */
 /** @typedef {import("./schemas.js").HostWorktrees} HostWorktrees */
 /** @typedef {import("./schemas.js").Snapshot} Snapshot */
+/** @typedef {import("./schemas.js").WorktreeFacts} WorktreeFacts */
 /** @typedef {import("./schemas.js").WorktreeFilter} WorktreeFilter */
+/** @typedef {import("./schemas.js").WorktreeFlags} WorktreeFlags */
 /** @typedef {import("./schemas.js").WorktreeItem} WorktreeItem */
 /** @typedef {import("./schemas.js").WorktreesByHost} WorktreesByHost */
 
 export const STALE_WORKTREE_DAYS = 14;
 
-/** @param {WorktreeItem} worktree @param {AgentView[]} agents */
-export function hasAgentIn(worktree, agents) {
+/** @param {WorktreeItem} worktree @param {AgentView} agent */
+function isAgentInside(worktree, { process }) {
   const folder = worktree.absolute_path;
-  return agents.some(({ process }) => process.cwd === folder || process.cwd.startsWith(`${folder}/`));
+  return process.cwd === folder || process.cwd.startsWith(`${folder}/`);
 }
+
+/** @param {WorktreeItem} worktree @param {AgentView[]} agents */
+export const hasAgentIn = (worktree, agents) => agents.some((agent) => isAgentInside(worktree, agent));
 
 /** @param {WorktreeItem} worktree @param {AgentView[]} agents */
 export function isStaleWorktree(worktree, agents) {
@@ -40,8 +45,11 @@ export const isMergedWorktree = (worktree) => Boolean(worktree.merged_into) && !
  * @param {AgentView[]} agents
  * @returns {{ canDelete: boolean, reason: string }}
  */
-export function deleteCheck(worktree, agents) {
-  if (hasAgentIn(worktree, agents)) return { canDelete: false, reason: "An agent works here. Stop it first." };
+export const deleteCheck = (worktree, agents) => deleteCheckFor(hasAgentIn(worktree, agents));
+
+/** @param {boolean} hasAgent @returns {{ canDelete: boolean, reason: string }} */
+export function deleteCheckFor(hasAgent) {
+  if (hasAgent) return { canDelete: false, reason: "An agent works here. Stop it first." };
   return { canDelete: true, reason: "Remove this worktree" };
 }
 
@@ -56,6 +64,31 @@ export const WORKTREE_FILTERS = {
 };
 
 export const WORKTREE_FILTER_NAMES = /** @type {WorktreeFilter[]} */ (Object.keys(WORKTREE_FILTERS));
+
+/**
+ * The flags of every row and the count of every filter in one pass, so a render checks each worktree against the
+ * agents once: each filter then sees only the agents inside that worktree.
+ * @param {WorktreeItem[]} worktrees
+ * @param {AgentView[]} agents
+ * @returns {WorktreeFacts}
+ */
+export function worktreeFacts(worktrees, agents) {
+  /** @type {Map<WorktreeItem, WorktreeFlags>} */
+  const flagsOfWorktree = new Map();
+  const counts = /** @type {Record<WorktreeFilter, number>} */ (Object.fromEntries(WORKTREE_FILTER_NAMES.map((name) => [name, 0])));
+  let reclaimableKib = 0;
+  let largestKib = 0;
+  for (const worktree of worktrees) {
+    const agentsInside = agents.filter((agent) => isAgentInside(worktree, agent));
+    const filters = new Set(WORKTREE_FILTER_NAMES.filter((name) => WORKTREE_FILTERS[name].matches(worktree, agentsInside)));
+    filters.forEach((name) => { counts[name] += 1; });
+    const isStale = filters.has("stale");
+    flagsOfWorktree.set(worktree, { hasAgent: agentsInside.length > 0, isStale, filters });
+    largestKib = Math.max(largestKib, worktree.size_kb ?? 0);
+    if (isStale) reclaimableKib += worktree.size_kb ?? 0;
+  }
+  return { flagsOfWorktree, counts, reclaimableKib, largestKib };
+}
 
 /** @param {WorktreeItem[]} worktrees */
 const totalKib = (worktrees) => worktrees.reduce((sum, worktree) => sum + (worktree.size_kb ?? 0), 0);

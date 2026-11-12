@@ -87,6 +87,13 @@ function containerList(view, host, docker) {
 
 const dockerTitle = () => panelTitle("container", "docker", TOKYO_NIGHT.blue);
 
+/** One prune check runs at a time. @param {string | null} checkingPruneOn @param {HostSnapshot} host */
+function pruneTooltip(checkingPruneOn, host) {
+  if (checkingPruneOn === host.label) return "Herdwatch asks the host how much a prune frees.";
+  if (checkingPruneOn) return `Wait: Herdwatch checks a prune on ${checkingPruneOn}.`;
+  return "Delete unused images, and volumes if you tick them. The dialog shows the space first.";
+}
+
 /**
  * Containers, images and volumes of the host, with the space that prune frees. Stop, remove and prune ask first.
  * @param {ConsoleView} view
@@ -105,11 +112,18 @@ export function dockerPanel(view, host, settings) {
   const title = titleRow(dockerTitle(), text(storageSize(docker.total_kb), TOKYO_NIGHT.foreground),
     text(`· ${storageSize(docker.reclaimable_kb)} can be freed`, TOKYO_NIGHT.comment));
   const runningCount = docker.containers.filter(isRunningContainer).length;
+  const isCheckingPrune = view.checkingPruneOn === host.label;
   const body = [
     ...statusLine,
     h_flex().gap(8).items_center().justify_between()
       .child(text(`containers · ${runningCount} running of ${docker.containers.length}`, TOKYO_NIGHT.comment))
-      .child(textButton({ id: `docker-prune-${host.label}`, label: `prune ${storageSize(docker.reclaimable_kb)}`, tooltip: "Delete unused images, and volumes if you tick them. The dialog shows the space first.", onPress: (cx) => view.onDockerPrune(host, cx) })),
+      .child(textButton({
+        id: `docker-prune-${host.label}`,
+        label: isCheckingPrune ? "checking…" : `prune ${storageSize(docker.reclaimable_kb)}`,
+        tooltip: pruneTooltip(view.checkingPruneOn, host),
+        isDisabled: view.checkingPruneOn !== null,
+        onPress: (cx) => view.onDockerPrune(host, cx),
+      })),
     containerList(view, host, docker),
     text(storageLine(docker), TOKYO_NIGHT.comment).text_size(FOOTNOTE_TEXT_SIZE_PX),
     text(`measured ${ageSince(docker.measured_at)} · every ${age(settings.docker_interval)}`, TOKYO_NIGHT.comment).text_size(FOOTNOTE_TEXT_SIZE_PX),

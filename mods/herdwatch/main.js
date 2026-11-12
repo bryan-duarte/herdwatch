@@ -4,10 +4,12 @@ import { dockerContainerDialog, dockerPruneDialog, killDialog, worktreeDialog } 
 import { runAction } from "./actions.js";
 import { agentViews, herdrAgents } from "./agents.js";
 import { closeConsole, closeThisDialog, copyRole, dialogPendingId, isConsoleOpenInFocusedTab, openConfirmDialog, toggleConsole, toggleShortcutLabel } from "./console-pane.js";
+import { nowInSeconds } from "./format.js";
+import { clockKey } from "./health.js";
 import { FOCUS_COMMAND, MONOSPACE_FONT, TOGGLE_COMMAND } from "./mod.js";
 import { clearPendingAction, readPendingAction, storePendingAction } from "./pending-action.js";
 import { Poller } from "./poller.js";
-import { loadConsoleChoices, readDocker, readHistory, readMonitorState, readSort, readWorktrees, saveConsoleChoices, saveSort } from "./store.js";
+import { loadConsoleChoices, readDocker, readMonitorData, readMonitorState, readWorktrees, saveConsoleChoices } from "./store.js";
 import { OPENING_TUNNEL_NOTE, portNoteKey, runningTunnels, startTunnel, stopTunnel, tunnelOfPort } from "./tunnels.js";
 import { renderBar } from "./views/bar.js";
 import { renderConfirmDialog } from "./views/confirm-dialog.js";
@@ -64,6 +66,9 @@ const hasModifier = (event) => Boolean(event.modifiers?.platform || event.modifi
  */
 const localUrl = (localPort) => `http://127.0.0.1:${localPort}`;
 
+/** @param {HostSnapshot[]} hosts @param {string | null} chosenLabel */
+const shownHost = (hosts, chosenLabel) => hosts.find((candidate) => candidate.label === chosenLabel) ?? hosts[0] ?? null;
+
 /** @param {string} message */
 const announceSuccess = (message) => notify({ title: `herdwatch: ${message}`, level: "success" });
 
@@ -111,9 +116,15 @@ export default class Herdwatch extends View {
     this.choices = loadConsoleChoices();
     /** @type {Record<string, string>} */
     this.portNotes = {};
+    /** @type {string} */
+    this.drawnClockKey = "";
+    /** @type {string | null} */
+    this.checkingPruneOn = null;
+    /** Not saved: another host or filter goes back to the short list. */
+    this.showAllWorktrees = false;
     const refreshSeconds = readMonitorState()?.snapshot?.settings?.pane_refresh;
     const refreshMs = Number.isFinite(refreshSeconds) ? refreshSeconds * MILLISECONDS_PER_SECOND : DEFAULT_CONSOLE_REFRESH_MS;
-    cx.timer.every(refreshMs, (timerCx) => timerCx.notify());
+    cx.timer.every(refreshMs, (timerCx) => this.refreshClock(timerCx));
     handleCommands(cx, { [FOCUS_COMMAND]: () => this.focusHandle.focus() });
   }
 
@@ -122,9 +133,25 @@ export default class Herdwatch extends View {
     if (this.role === "dialog") clearPendingAction(this.dialog.pendingId);
   }
 
+  /**
+   * New data redraws the console through the poll; the clock redraws it only when a time text would change.
+   * @param {ModContext} cx
+   */
+  refreshClock(cx) {
+    const nextClockKey = clockKey(readMonitorState()?.snapshot ?? null, nowInSeconds());
+    if (nextClockKey === this.drawnClockKey) return;
+    this.drawnClockKey = nextClockKey;
+    cx.notify();
+  }
+
   /** @param {Partial<ConsoleChoices>} change @param {ModContext} cx */
   choose(change, cx) {
-    this.choices = { ...this.choices, ...change };
+    const nextChoices = { ...this.choices, ...change };
+    const hosts = readMonitorState()?.snapshot?.hosts ?? [];
+    const isOtherHost = shownHost(hosts, nextChoices.host)?.label !== shownHost(hosts, this.choices.host)?.label;
+    const isOtherWorktreeList = isOtherHost || nextChoices.filter !== this.choices.filter;
+    if (isOtherWorktreeList) this.showAllWorktrees = false;
+    this.choices = nextChoices;
     saveConsoleChoices(this.choices);
     cx.notify();
   }
@@ -137,24 +164,32 @@ export default class Herdwatch extends View {
   handleConsoleKey(event, cx) {
     if (hasModifier(event)) return;
     const sort = SORT_KEYS[event.key];
-    if (sort) saveSort(sort);
+    if (sort) this.choose({ sort }, cx);
     const hosts = readMonitorState()?.snapshot?.hosts ?? [];
     const hostIndex = Number(event.key) - 1;
     const isHostKey = Number.isInteger(hostIndex) && hostIndex >= 0 && hostIndex < hosts.length;
     if (isHostKey) this.choose({ host: hosts[hostIndex].label }, cx);
   }
 
-  /** @param {ModContext} cx */
+  /**
+   * A click in a console that already has the keys changes nothing here: the handler of the click redraws.
+   * @param {ModContext} cx
+   */
   takeKeyboard(cx) {
+    if (this.focusHandle.is_focused()) return;
     this.focusHandle.focus();
     cx.notify();
   }
 
-  /** @param {number} nextWidth @param {ModContext} cx */
+  /**
+   * Only the wide and the narrow layouts differ, so a resize redraws only when it crosses WIDE_CONSOLE_PX.
+   * @param {number} nextWidth @param {ModContext} cx
+   */
   updateWidth(nextWidth, cx) {
-    if (nextWidth === this.width) return;
+    const wasWide = this.width >= WIDE_CONSOLE_PX;
+    const isWide = nextWidth >= WIDE_CONSOLE_PX;
     this.width = nextWidth;
-    cx.notify();
+    if (wasWide !== isWide) cx.notify();
   }
 
   /** @param {DialogCopy} copy */
@@ -203,10 +238,18 @@ export default class Herdwatch extends View {
     });
   }
 
-  /** @param {HostSnapshot} host @param {ModContext} cx */
+  /**
+   * The preview takes an SSH round trip, so the button says "checking…" at once.
+   * @param {HostSnapshot} host @param {ModContext} cx
+   */
   askToPrune(host, cx) {
-    cx.spawn(async () => {
+    if (this.checkingPruneOn) return;
+    this.checkingPruneOn = host.label;
+    cx.notify();
+    cx.spawn(async (/** @type {ModAsyncContext} */ asyncCx) => {
       const preview = await runAction("docker-prune", host.label, ["--preview"]);
+      this.checkingPruneOn = null;
+      asyncCx.notify();
       if (preview.ok === false) {
         notify({ title: "herdwatch: Docker prune", body: preview.message, level: "warning" });
         return;
@@ -227,22 +270,21 @@ export default class Herdwatch extends View {
 
   /** @param {ModContext} cx @returns {ConsoleView} */
   consoleView(cx) {
-    const monitorState = readMonitorState();
-    const history = readHistory();
-    const hosts = monitorState?.snapshot?.hosts ?? [];
-    const host = hosts.find((candidate) => candidate.label === this.choices.host) ?? hosts[0] ?? null;
+    const { monitorState, history, signatures } = readMonitorData();
+    const host = shownHost(monitorState?.snapshot?.hosts ?? [], this.choices.host);
     return {
       monitorState,
       history,
-      worktrees: readWorktrees(),
-      docker: readDocker(),
+      worktrees: readWorktrees(signatures.worktrees),
+      docker: readDocker(signatures.docker),
       tunnels: runningTunnels(),
       portNotes: this.portNotes,
+      checkingPruneOn: this.checkingPruneOn,
       host,
       agents: host ? agentViews(host, history, herdrAgents()) : [],
       tab: this.choices.tab,
       rangeSamples: this.choices.range,
-      sort: readSort(),
+      sort: this.choices.sort,
       worktreeFilter: this.choices.filter,
       shortcut: toggleShortcutLabel(),
       hasKeyboard: this.focusHandle.is_focused(),
@@ -250,8 +292,10 @@ export default class Herdwatch extends View {
       onHost: (label) => this.choose({ host: label }, cx),
       onTab: (tab) => this.choose({ tab }, cx),
       onRange: (range) => this.choose({ range }, cx),
-      onSort: saveSort,
+      onSort: (sort) => this.choose({ sort }, cx),
       onWorktreeFilter: (filter) => this.choose({ filter }, cx),
+      showAllWorktrees: this.showAllWorktrees,
+      onShowAllWorktrees: (clickCx) => this.showEveryWorktree(clickCx),
       onClose: closeConsole,
       ports: this.portActions(),
       onKill: (killHost, pid) => this.askToConfirm(killDialog(killHost, pid)),
@@ -259,6 +303,12 @@ export default class Herdwatch extends View {
       onDockerContainer: (dockerHost, container, name) => this.askToConfirm(dockerContainerDialog(dockerHost, container, name)),
       onDockerPrune: (pruneHost, clickCx) => this.askToPrune(pruneHost, clickCx),
     };
+  }
+
+  /** @param {ModContext} cx */
+  showEveryWorktree(cx) {
+    this.showAllWorktrees = true;
+    cx.notify();
   }
 
   /** @param {string} key @param {ModContext} cx */

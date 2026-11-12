@@ -3,7 +3,7 @@ import { h_flex, v_flex } from "gpui-base";
 import { dockerOfHost } from "../docker.js";
 import { backendGuidance, configProblemLine, downForText, hostFailureGuidance, hostProblemGuidance, hostTabTooltip } from "../failure-guidance.js";
 import { ageSince, minutesIn, minutesText, nowInSeconds } from "../format.js";
-import { hostHealth } from "../health.js";
+import { hostHealth, isPollLate } from "../health.js";
 import { CHART_RANGE_SAMPLES, SECONDS_PER_SAMPLE } from "../history.js";
 import { TOKYO_NIGHT, healthColor } from "../palette.js";
 import { worktreesOfHost } from "../worktrees.js";
@@ -101,8 +101,7 @@ function footer(view) {
 
 /** @param {Snapshot} snapshot */
 function lateLine(snapshot) {
-  const isPollLate = nowInSeconds() - snapshot.generated_at > snapshot.settings.stale_seconds;
-  if (!isPollLate) return null;
+  if (!isPollLate(snapshot, nowInSeconds())) return null;
   const isPreviousPollBusy = snapshot.collector.state === "busy";
   const reason = isPreviousPollBusy ? " The previous poll still runs: a host answers slowly." : " The next poll is late.";
   return `No fresh data since ${ageSince(snapshot.generated_at)}.${reason}`;
@@ -187,7 +186,7 @@ function tabPanels(view, host, hostNumber, settings) {
   if (view.tab === "worktrees") return [worktreesPanel(view, host, settings)];
   if (view.tab === "procs") return processesPanel(view, host, settings);
   if (view.tab === "docker") return [dockerPanel(view, host, settings)];
-  return [systemPanel(view, host, hostNumber, settings), agentsPanel(view, host, settings)];
+  return [systemPanel(view, host, hostNumber, settings), agentsPanel(view, host, settings, { showSparklines: false })];
 }
 
 /**

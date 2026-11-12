@@ -1,8 +1,8 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { age, byteRate, homeRelative, percentText, storageSize } from "../mods/herdwatch/format.js";
-import { hostHealth, isStale, percentLevel } from "../mods/herdwatch/health.js";
-import { SETTINGS, hostSnapshot } from "./support/snapshots.js";
+import { clockKey, hostHealth, isPollLate, isStale, percentLevel } from "../mods/herdwatch/health.js";
+import { SETTINGS, hostSnapshot, snapshot } from "./support/snapshots.js";
 
 test("percentLevel compares with the warn and crit settings", () => {
   assert.equal(percentLevel(null, SETTINGS), "normal");
@@ -30,4 +30,18 @@ test("the text formats", () => {
   assert.equal(percentText(41.6), "42%");
   assert.equal(homeRelative("/home/dev/code", "/home/dev"), "~/code");
   assert.equal(homeRelative("/home/developer", "/home/dev"), "/home/developer");
+});
+
+test("isPollLate is true once the snapshot is older than stale_seconds", () => {
+  assert.equal(isPollLate(snapshot({ generated_at: 1000 }), 1030), false);
+  assert.equal(isPollLate(snapshot({ generated_at: 1000 }), 1031), true);
+});
+
+test("clockKey changes only when a late poll, a stale host or the minute changes", () => {
+  const fresh = snapshot({ generated_at: 1000, hosts: [hostSnapshot({ updated_at: 1000 })] });
+  assert.equal(clockKey(fresh, 1005), clockKey(fresh, 1019));
+  assert.notEqual(clockKey(fresh, 1019), clockKey(fresh, 1020));
+  assert.notEqual(clockKey(fresh, 1029), clockKey(fresh, 1031));
+  assert.equal(clockKey(null, 1005), "none:16");
+  assert.notEqual(clockKey(fresh, 1031), clockKey(fresh, 1033));
 });

@@ -96,17 +96,31 @@ const PROGRAM_PATTERNS = [
   [/^electron/i, MARKS.electron],
 ];
 
+const MAX_CACHED_NAMES = 256;
+/** @type {Map<string, ProgramMark | null>} */
+const markOfName = new Map();
+
 /** @param {string} name */
 const listedMarkOf = (name) => (Object.hasOwn(PROGRAM_MARKS, name) ? PROGRAM_MARKS[name] : null);
 
-/**
- * The mark of a common program, from its process name ("next-server (v15.1)", "python3.12", "Google Chrome Helper").
- * @param {string} processName
- * @returns {ProgramMark | null} null when the program has no mark
- */
-export function programMark(processName) {
+/** @param {string} processName @returns {ProgramMark | null} */
+function findMark(processName) {
   const name = processName.trim().replace(VERSION_IN_PARENTHESES, "").toLowerCase();
   const exactMark = listedMarkOf(name) ?? listedMarkOf(name.replace(TRAILING_VERSION, ""));
   if (exactMark) return exactMark;
   return PROGRAM_PATTERNS.find(([pattern]) => pattern.test(processName.trim()))?.[1] ?? null;
+}
+
+/**
+ * The mark of a common program, from its process name ("next-server (v15.1)", "python3.12", "Google Chrome Helper").
+ * A host runs the same programs from poll to poll, so each name is looked up once.
+ * @param {string} processName
+ * @returns {ProgramMark | null} null when the program has no mark
+ */
+export function programMark(processName) {
+  if (markOfName.has(processName)) return markOfName.get(processName);
+  if (markOfName.size >= MAX_CACHED_NAMES) markOfName.clear();
+  const mark = findMark(processName);
+  markOfName.set(processName, mark);
+  return mark;
 }
