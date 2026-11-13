@@ -37,8 +37,7 @@ const meterReading = ({ label, glyph, percent, gradient, detail, settings }) => 
     .child(truncatedText(detail, TOKYO_NIGHT.dim)));
 
 /**
- * CPU or memory, the two readings that matter most: one full-width block each, so a percent can never be
- * read as the other one's, with its chart under it at the full width of the box.
+ * CPU, the reading that moves most: one full-width block, with its chart under it at the full width of the box.
  * @param {Parameters<typeof meterReading>[0] & { chart: Element }} block
  */
 const readingBlock = ({ chart, ...reading }) => v_flex().w_full().gap(4).child(meterReading(reading)).child(chart);
@@ -49,22 +48,15 @@ function hostCharts(view, host, settings) {
   const markers = eventMarkers(view.history, host.label, view.rangeSamples)
     .map((marker) => ({ position: marker.position, color: EVENT_COLORS[marker.kind], text: marker.text }));
   const cpuChart = areaChart({ samples: samplesInRange(series?.cpu, view.rangeSamples), heightPx: CHART_HEIGHT_PX, gradient: GRADIENTS.cpu, markers });
-  const memoryChart = areaChart({
-    samples: samplesInRange(series?.mem, view.rangeSamples),
-    heightPx: CHART_HEIGHT_PX,
-    gradient: GRADIENTS.memory,
-    secondLine: samplesInRange(series?.swap, view.rangeSamples),
-    secondLineColor: TOKYO_NIGHT.purple,
-  });
   const swap = Number.isFinite(host.swap_pct) && Number(host.swap_pct) > 0 ? ` · swap ${percentText(host.swap_pct)}` : "";
   return v_flex().gap(10)
     .child(readingBlock({
       label: "cpu", glyph: "cpu", percent: host.cpu_pct, gradient: GRADIENTS.cpu,
       detail: "", chart: cpuChart, settings,
     }))
-    .child(readingBlock({
+    .child(meterReading({
       label: "mem", glyph: "memory-stick", percent: host.mem_pct, gradient: GRADIENTS.memory,
-      detail: `${kibAsGib(host.mem_used_kb)} / ${kibAsGib(host.mem_total_kb)} GiB${swap}`, chart: memoryChart, settings,
+      detail: `${kibAsGib(host.mem_used_kb)} / ${kibAsGib(host.mem_total_kb)} GiB${swap}`, settings,
     }));
 }
 
@@ -107,9 +99,10 @@ const coresRow = (host) => resourceRow("cores", "cpu", text(String(coreCount(hos
 /** @param {ConsoleView} view @param {HostSnapshot} host @param {MonitorSettings} settings */
 function resourceRows(view, host, settings) {
   const rows = v_flex().gap(5);
-  rows.child(resourceRow("disk", "hard-drive",
-    text(percentText(host.disk_pct), levelColor(percentLevel(host.disk_pct, settings))).font_semibold(),
-    truncatedText(diskDetail(host), TOKYO_NIGHT.dim)));
+  rows.child(meterReading({
+    label: "disk", glyph: "hard-drive", percent: host.disk_pct, gradient: GRADIENTS.storage,
+    detail: diskDetail(host), settings,
+  }));
   rows.child(networkRow(view, host));
   if (host.gpu) {
     const videoMemory = `${mibAsGib(host.gpu.mem_used_mib)} / ${mibAsGib(host.gpu.mem_total_mib)} GiB`;
@@ -123,7 +116,7 @@ function resourceRows(view, host, settings) {
 }
 
 /**
- * The overview box of one host: the core count, CPU, then memory (each a reading over its chart), then
+ * The overview box of one host: the core count, CPU over its chart, the memory reading, then
  * disk, network, GPU and worktree rows.
  * @param {ConsoleView} view
  * @param {HostSnapshot} host
