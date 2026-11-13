@@ -55,7 +55,7 @@ function header(view) {
     .when(hasHostTabs, (element) => element.child(tabStrip({ id: "hosts", options: hostOptions, selected: view.host.label, onSelect: view.onHost })))
     .child(div().flex_1())
     .child(uiIcon("history").text_color(TOKYO_NIGHT.comment))
-    .child(segmentedControl({ id: "range", options: RANGE_OPTIONS, selected: String(view.rangeSamples), onSelect: (samples) => view.onRange(Number(samples)) }))
+    .child(segmentedControl({ id: "range", options: RANGE_OPTIONS, selected: String(view.rangeSamples), onSelect: (samples, cx) => view.onRange(Number(samples), cx) }))
     .child(iconButton({
       id: "close-console",
       icon: CLOSE_ICON,
@@ -206,16 +206,25 @@ function tabBody(view) {
 }
 
 /**
- * The tabbed console: host tabs and range in the header, a tab strip, one tab body, and the key footer.
+ * The body of one tab: the notice, then the panels of the tab. A retained view draws it, so a redraw of the console
+ * frame (a click on a tab, a focus change, a change in Herdr's live data) does not build the tables again.
  * @param {ConsoleView} view
- * @param {string} monospaceFont
  */
-export function renderConsole(view, monospaceFont) {
+export function renderConsoleBody(view) {
   const banner = notice(view);
-  const body = v_flex().id(`console-body-${view.tab}`).flex_1().min_h(0).px(10).pt(8).pb(12).gap(12)
+  return v_flex().id(`console-body-${view.tab}`).flex_1().min_h(0).px(10).pt(8).pb(12).gap(12)
     .when(!TABS_WITHOUT_OUTER_SCROLL.has(view.tab), (element) => element.overflow_y_scrollbar())
     .when(Boolean(banner), (element) => element.child(noticePanel(banner)))
     .children(tabBody(view));
+}
+
+/**
+ * The tabbed console: host tabs and range in the header, a tab strip, the body of the open tab, and the key footer.
+ * @param {ConsoleView} view
+ * @param {string} monospaceFont
+ * @param {Element | import("gpui-kit").Entity} body the retained view of the open tab
+ */
+export function renderConsole(view, monospaceFont, body) {
   return v_flex().id("herdwatch-console").size_full().bg(TOKYO_NIGHT.background).font_family(monospaceFont).text_size(CONSOLE_TEXT_SIZE_PX).text_color(TOKYO_NIGHT.foreground)
     .child(header(view))
     .child(consoleTabs(view))

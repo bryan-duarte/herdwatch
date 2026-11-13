@@ -1,6 +1,5 @@
 import { Background, PathBuilder, div } from "gpui-kit";
-import { h_flex } from "gpui-base";
-import { GRADIENTS, TOKYO_NIGHT, gradientAt } from "../palette.js";
+import { TOKYO_NIGHT, gradientAt } from "../palette.js";
 
 /** @typedef {import("gpui-kit").Color} Color */
 
@@ -14,8 +13,6 @@ const SECOND_LINE_DASH = [3, 2];
 const END_DOT_SIZE_PX = 5;
 const MARKER_SIZE_PX = 6;
 const MARKER_LINE_OPACITY = 0.55;
-const CORE_CELL_HEIGHT_PX = 14;
-const CORE_MIN_OPACITY = 0.35;
 const VERTICAL_GRADIENT_ANGLE = 0;
 
 /**
@@ -180,19 +177,4 @@ export function sparkline(samples, color, { widthPx, heightPx }, maximum = PERCE
   return chart
     .child(window.paint_path(areaPath(runs), Background.solid(color).opacity(SPARKLINE_AREA_OPACITY)).absolute().size_full())
     .child(window.paint_path(linePath(runs, SECOND_LINE_WIDTH_PX), color).absolute().size_full());
-}
-
-/**
- * One cell per CPU core, colored and dimmed by its load.
- * @param {(number | null)[]} cores
- * @param {number} cellWidthPx
- */
-export function coreStrip(cores, cellWidthPx) {
-  return h_flex().gap(2).flex_wrap().children(cores.map((corePercent, index) => {
-    const load = Number.isFinite(corePercent) ? Math.min(corePercent, PERCENT_SCALE) : 0;
-    const loadShare = load / PERCENT_SCALE;
-    return div().w(cellWidthPx).h(CORE_CELL_HEIGHT_PX).rounded(2).tooltip(`core ${index}: ${Math.round(load)}%`)
-      .bg(gradientAt(GRADIENTS.cpu, loadShare))
-      .opacity(CORE_MIN_OPACITY + (1 - CORE_MIN_OPACITY) * loadShare);
-  }));
 }

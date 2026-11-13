@@ -62,7 +62,7 @@ function dialogBody(view, pending) {
     id: `dialog-option-${option.key}`,
     label: option.label,
     isChecked: Boolean(view.state.checked[option.key]),
-    onToggle: () => view.onToggleOption(option.key),
+    onToggle: (cx) => view.onToggleOption(option.key, cx),
   }));
   return [
     titleRow(text(pending.title, pending.isDestructive ? TOKYO_NIGHT.red : TOKYO_NIGHT.foreground).font_semibold().text_size(TITLE_TEXT_SIZE_PX)),

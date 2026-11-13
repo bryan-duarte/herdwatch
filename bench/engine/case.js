@@ -10,6 +10,9 @@ import { parseSnapshot } from "./snapshot.js";
 import { takePollLease } from "./store.js";
 
 const CASE_NAME = "__CASE__";
+/** The case "frame" draws the console frame on the overview tab. */
+const TAB = CASE_NAME === "frame" ? "overview" : CASE_NAME;
+const IS_TAB_CASE = !["pill", "frame", "poll"].includes(CASE_NAME);
 const RANGE_SAMPLES = Number("__RANGE__");
 const CONSOLE_WIDTH_PX = 640;
 const STATE_KEY = "herdwatch.state";
@@ -27,7 +30,7 @@ function benchCopy(focusHandle) {
   return Object.assign(Object.create(Herdwatch.prototype), {
     role: CASE_NAME === "pill" ? "bar" : "console",
     width: CONSOLE_WIDTH_PX,
-    choices: { host: null, tab: CASE_NAME, range: RANGE_SAMPLES, filter: "all", sort: "cpu" },
+    choices: { host: null, tab: TAB, range: RANGE_SAMPLES, filter: "all", sort: "cpu" },
     portNotes: {},
     focusHandle,
     drawnClockKey: "",
@@ -45,7 +48,17 @@ export default class Bench extends View {
     this.poller.publish(this.snapshot);
     storeHistory();
     this.copy = benchCopy(cx.focus_handle());
-    if (CASE_NAME !== "poll") this.copy.render(cx);
+    if (this.copy.role === "console" && this.copy.createTabBody) this.copy.createTabBody(cx);
+    // Fills the caches. A retained body can be mounted only in a render, so a mod with one draws its body alone here.
+    if (CASE_NAME === "poll") return;
+    if (this.copy.role === "console" && this.copy.renderTabBody) this.copy.renderTabBody();
+    else this.copy.render(cx);
+  }
+
+  /** One redraw: the frame, and for a tab case the body of the tab as well. */
+  renderCase(cx) {
+    this.copy.render(cx);
+    if (IS_TAB_CASE && this.copy.renderTabBody) this.copy.renderTabBody();
   }
 
   render(cx) {
@@ -54,7 +67,7 @@ export default class Bench extends View {
       takePollLease(this.poller.copyId, Math.floor(Date.now() / 1000));
       this.poller.publish(this.snapshot);
     } else {
-      this.copy.render(cx);
+      this.renderCase(cx);
     }
     throw new Error(`QBENCH ${JSON.stringify({ ms: performance.now() - startedAt })}`);
   }

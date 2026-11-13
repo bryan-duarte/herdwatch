@@ -66,7 +66,7 @@ const SUPERSCRIPT_DIGITS = ["⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷",
  * @property {string} id
  * @property {ChoiceOption<Value>[]} options
  * @property {Value} selected
- * @property {(value: Value) => void} onSelect
+ * @property {(value: Value, cx: ModContext) => void} onSelect gets the click's context, never one kept from a render
  * @property {boolean} [compact] in a narrow pane, a tab that is not open shows its glyph and count only
  */
 
@@ -133,6 +133,7 @@ export const withIdleStates = (element) => element
 
 /**
  * A btop meter: a row of cells, filled up to the percent, each filled cell colored by its place on the gradient.
+ * The row sets the height and the cells stretch to it, because a table draws many meters and each call costs.
  * @param {number | null} percent
  * @param {number} cellCount
  * @param {readonly Color[]} gradient
@@ -142,9 +143,8 @@ export function meter(percent, cellCount, gradient) {
   const filledCells = hasLoad ? Math.max(1, Math.round((Math.min(percent, PERCENT_SCALE) / PERCENT_SCALE) * cellCount)) : 0;
   const lastCellIndex = Math.max(1, cellCount - 1);
   const cells = Array.from({ length: cellCount }, (_unused, index) =>
-    div().w(METER_CELL_WIDTH_PX).h(METER_CELL_HEIGHT_PX).flex_none().rounded(1)
-      .bg(index < filledCells ? gradientAt(gradient, index / lastCellIndex) : TOKYO_NIGHT.highlight));
-  return h_flex().flex_none().gap(METER_CELL_GAP_PX).items_center().children(cells);
+    div().w(METER_CELL_WIDTH_PX).rounded(1).bg(index < filledCells ? gradientAt(gradient, index / lastCellIndex) : TOKYO_NIGHT.highlight));
+  return h_flex().flex_none().h(METER_CELL_HEIGHT_PX).gap(METER_CELL_GAP_PX).items_stretch().children(cells);
 }
 
 /** @param {Color} color */
@@ -247,7 +247,7 @@ export function segmentedControl({ id, options, selected, onSelect }) {
       div().id(`${id}-${option.value}`).h(CONTROL_HEIGHT_PX - 2 * CONTROL_INSET_PX).px(9).flex().items_center()
         .rounded(CONTROL_RADIUS_PX - CONTROL_INSET_PX).text_size(11).font_semibold().child(option.label),
       option.tooltip,
-      () => onSelect(option.value),
+      (cx) => onSelect(option.value, cx),
     );
     if (option.value === selected) return segment.bg(TOKYO_NIGHT.blue).text_color(TOKYO_NIGHT.background);
     return withIdleStates(segment.text_color(TOKYO_NIGHT.dim));
@@ -310,7 +310,7 @@ export function textButton({ id, label, tooltip, isPrimary = false, isDestructiv
 
 /**
  * A checkbox with its label; the whole row toggles it.
- * @param {{ id: string, label: string, isChecked: boolean, onToggle: () => void }} checkbox
+ * @param {{ id: string, label: string, isChecked: boolean, onToggle: (cx: ModContext) => void }} checkbox
  */
 export function checkbox({ id, label, isChecked, onToggle }) {
   const box = div().size(CHECKBOX_SIZE_PX).flex_none().flex().items_center().justify_center().rounded(3).border_1()
@@ -338,7 +338,7 @@ export function tabStrip({ id, options, selected, onSelect, compact = false }) {
         .when(showLabel, (element) => element.child(option.label))
         .when(Number.isFinite(option.count), (element) => element.child(div().text_size(10.5).text_color(TOKYO_NIGHT.comment).child(String(option.count)))),
       option.tooltip,
-      () => onSelect(option.value),
+      (cx) => onSelect(option.value, cx),
     );
     if (isSelected) return tab.border_color(TOKYO_NIGHT.border).bg(TOKYO_NIGHT.highlight).text_color(TOKYO_NIGHT.foreground);
     return withIdleStates(tab.border_color(TOKYO_NIGHT.backgroundDark).text_color(TOKYO_NIGHT.dim));
@@ -359,7 +359,7 @@ export function filterChips({ id, options, selected, onSelect }) {
         .child(option.label)
         .when(Number.isFinite(option.count), (element) => element.child(String(option.count))),
       option.tooltip,
-      () => onSelect(option.value),
+      (cx) => onSelect(option.value, cx),
     );
     if (option.value === selected) return chipButton.bg(TOKYO_NIGHT.blue).border_color(TOKYO_NIGHT.blue).text_color(TOKYO_NIGHT.background);
     return withIdleStates(chipButton.bg(TOKYO_NIGHT.backgroundDark).border_color(TOKYO_NIGHT.border).text_color(TOKYO_NIGHT.dim));

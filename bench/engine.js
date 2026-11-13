@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 export const RUNS_PER_CASE = 7;
-export const ENGINE_CASES = ["overview:60", "overview:120", "agents:60", "ports:60", "worktrees:60", "docker:60", "procs:60", "pill:60", "poll:60"];
+/** A tab case draws the console frame and the body of that tab (a first visit); "frame" draws the frame only (a click on a tab whose body is current). A mod without tab bodies draws its whole console in each case. */
+export const ENGINE_CASES = ["overview:60", "overview:120", "agents:60", "ports:60", "worktrees:60", "docker:60", "procs:60", "frame:60", "pill:60", "poll:60"];
 const RESULT_PATTERN = /QBENCH (\{.*\})/;
 const STOPPED_BY_ENGINE = /^interrupted/m;
 const CASE_TEMPLATE = readFileSync(new URL("./engine/case.js", import.meta.url), "utf8");
