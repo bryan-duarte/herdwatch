@@ -29,6 +29,7 @@ import { renderConsole, renderConsoleBody } from "./views/console.js";
 /** @typedef {import("./schemas.js").ListeningPort} ListeningPort */
 /** @typedef {import("./schemas.js").ModAsyncContext} ModAsyncContext */
 /** @typedef {import("./schemas.js").ModContext} ModContext */
+/** @typedef {import("./schemas.js").MonitorData} MonitorData */
 /** @typedef {import("./schemas.js").PendingAction} PendingAction */
 /** @typedef {import("./schemas.js").PortActions} PortActions */
 /** @typedef {import("./schemas.js").ProcessSort} ProcessSort */
@@ -144,9 +145,11 @@ export default class Herdwatch extends View {
     this.tabBody = /** @type {any} */ (cx).new(TabBody, { owner: this });
   }
 
-  /** Everything that the body of the open tab draws, as one string: the body is built again only when this changes. */
-  bodyKey() {
-    const { monitorState, signatures } = readMonitorData();
+  /**
+   * Everything that the body of the open tab draws, as one string: the body is built again only when this changes.
+   * @param {MonitorData} data one shared read, because each read copies the whole state
+   */
+  bodyKey({ monitorState, signatures } = readMonitorData()) {
     const snapshot = monitorState?.snapshot ?? null;
     const { tab, host, range, sort, filter } = this.choices;
     return JSON.stringify([
@@ -319,10 +322,10 @@ export default class Herdwatch extends View {
   /**
    * The callbacks take the context of their own click: a context kept from a render is stale by the time of a click.
    * @param {ConsoleTab} tab
+   * @param {MonitorData} data one shared read, because each read copies the whole state
    * @returns {ConsoleView}
    */
-  consoleView(tab) {
-    const { monitorState, history, signatures } = readMonitorData();
+  consoleView(tab, { monitorState, history, signatures } = readMonitorData()) {
     const host = shownHost(monitorState?.snapshot?.hosts ?? [], this.choices.host);
     return {
       monitorState,
@@ -442,8 +445,9 @@ export default class Herdwatch extends View {
    * when the body is out of date.
    */
   renderTabBody() {
-    this.drawnBodyKey = this.bodyKey();
-    return renderConsoleBody(this.consoleView(this.choices.tab));
+    const data = readMonitorData();
+    this.drawnBodyKey = this.bodyKey(data);
+    return renderConsoleBody(this.consoleView(this.choices.tab, data));
   }
 
   /**
