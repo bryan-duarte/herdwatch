@@ -45,7 +45,7 @@ test("samplesInRange pads on the left so new samples grow from the right", () =>
 
 test("eventMarkers places an event at its time on the chart window", () => {
   const history = emptyHistory();
-  history.hosts.devbox = { at: [100, 105, 110], cpu: [], mem: [], swap: [], rx: [], tx: [] };
+  history.hosts.devbox = { at: [100, 105, 110], cpu: [], rx: [], tx: [] };
   history.events.devbox = [{ at: 105, kind: "start", text: "claude started" }, { at: 50, kind: "done", text: "too old" }];
   const markers = eventMarkers(history, "devbox", 5);
   assert.deepEqual(markers, [{ position: 0.75, kind: "start", text: "claude started" }]);

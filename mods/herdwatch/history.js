@@ -54,8 +54,6 @@ function nextSeries(host, previous, now) {
   return {
     at: appendLimited(previous?.at, now, HISTORY_SAMPLES),
     cpu: appendReading(previous?.cpu, host, host.cpu_pct),
-    mem: appendReading(previous?.mem, host, host.mem_pct),
-    swap: appendReading(previous?.swap, host, host.swap_pct),
     rx: appendReading(previous?.rx, host, host.net_rx_rate),
     tx: appendReading(previous?.tx, host, host.net_tx_rate),
   };
