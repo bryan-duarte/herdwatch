@@ -18,7 +18,13 @@ import { MARK_ONLY_COLUMN_PX, agentLabel, fixedCell, killButton, panel, panelTit
 const PERCENT_SCALE = 100;
 const ROW_HEIGHT_PX = 24;
 const STATE_DOT_SIZE_PX = 7;
-const COLUMN_WIDTH_PX = { app: 96, state: 96, cpu: 54, memory: 64, uptime: 46, kill: 18 };
+const KILL_COLUMN_PX = 18;
+/** In a narrow pane the app shows its mark only and the state its dot only, so the branch keeps room. */
+const COLUMN_WIDTH_PX = {
+  wide: { app: 96, state: 96, cpu: 54, memory: 64, uptime: 46 },
+  narrow: { app: MARK_ONLY_COLUMN_PX, state: STATE_DOT_SIZE_PX, cpu: 40, memory: 52, uptime: 30 },
+};
+const COLUMN_GAP_PX = { wide: 8, narrow: 6 };
 const CPU_SPARKLINE_SIZE = { widthPx: 110, heightPx: 18 };
 const CPU_SPARKLINE_TITLE = `cpu ${minutesText(AGENT_HISTORY_SAMPLES * SECONDS_PER_SAMPLE)}`;
 /** @type {Record<AgentState, { label: string, color: Color }>} */
@@ -29,13 +35,16 @@ const AGENT_STATE_LOOKS = {
   done: { label: "done", color: TOKYO_NIGHT.green },
 };
 
-/** @param {AgentState} state */
-function stateCell(state) {
+/** @param {boolean} isWide */
+const layoutOf = (isWide) => (isWide ? "wide" : "narrow");
+
+/** @param {AgentState} state @param {boolean} isWide */
+function stateCell(state, isWide) {
   const look = AGENT_STATE_LOOKS[state];
   const labelColor = state === "blocked" ? TOKYO_NIGHT.yellow : TOKYO_NIGHT.foregroundDark;
-  return h_flex().w(COLUMN_WIDTH_PX.state).flex_none().gap(5).items_center()
+  return h_flex().w(COLUMN_WIDTH_PX[layoutOf(isWide)].state).flex_none().gap(5).items_center()
     .child(div().size(STATE_DOT_SIZE_PX).rounded(4).bg(look.color))
-    .child(text(look.label, labelColor));
+    .when(isWide, (element) => element.child(text(look.label, labelColor)));
 }
 
 /**
@@ -68,7 +77,7 @@ function cpuSparkline(agent) {
 /** @param {AgentView} agent @param {HostSnapshot} host @param {ConsoleView} view */
 function killCell(agent, host, view) {
   const { pid, app } = agent.process;
-  const cell = fixedCell(COLUMN_WIDTH_PX.kill);
+  const cell = fixedCell(KILL_COLUMN_PX);
   if (!Number.isFinite(pid)) return cell;
   return cell.child(killButton({ id: `agent-kill-${host.label}-${pid}`, processName: app, pid, onPress: () => view.onKill(host, pid) }));
 }
@@ -80,32 +89,36 @@ function killCell(agent, host, view) {
 function agentRow(agent, host, settings, view, hasSparkline) {
   const { process } = agent;
   const { isWide } = view;
+  const layout = layoutOf(isWide);
+  const widths = COLUMN_WIDTH_PX[layout];
   const cpu = treeCpu(process);
   const folder = homeRelative(process.cwd, host.home);
-  return h_flex().id(`agent-${host.label}-${process.pid}`).h(ROW_HEIGHT_PX).gap(8).items_center().tooltip(treeTooltip(process, folder))
-    .child(fixedCell(isWide ? COLUMN_WIDTH_PX.app : MARK_ONLY_COLUMN_PX).child(agentLabel(`agent-app-${host.label}-${process.pid}`, process.app, isWide)))
-    .child(stateCell(agent.state))
+  return h_flex().id(`agent-${host.label}-${process.pid}`).h(ROW_HEIGHT_PX).gap(COLUMN_GAP_PX[layout]).items_center().tooltip(treeTooltip(process, folder))
+    .child(fixedCell(widths.app).child(agentLabel(`agent-app-${host.label}-${process.pid}`, process.app, isWide)))
+    .child(stateCell(agent.state, isWide))
     .child(h_flex().flex_1().min_w(0).gap(6)
-      .child(text(process.repository || "", TOKYO_NIGHT.blue))
+      .child(truncatedText(process.repository || "", TOKYO_NIGHT.blue))
       .child(truncatedText(process.branch || folder, TOKYO_NIGHT.foregroundDark)))
     .when(hasSparkline, (element) => element.child(cpuSparkline(agent)))
-    .child(rightCell(cpu.toFixed(1), COLUMN_WIDTH_PX.cpu, levelColor(percentLevel(Math.min(cpu, PERCENT_SCALE), settings))))
-    .child(rightCell(storageSize(process.tree_rss_kb), COLUMN_WIDTH_PX.memory, TOKYO_NIGHT.foregroundDark))
-    .child(rightCell(ageOrUnknown(process.elapsed_seconds), COLUMN_WIDTH_PX.uptime, TOKYO_NIGHT.comment))
+    .child(rightCell(cpu.toFixed(1), widths.cpu, levelColor(percentLevel(Math.min(cpu, PERCENT_SCALE), settings))))
+    .child(rightCell(storageSize(process.tree_rss_kb), widths.memory, TOKYO_NIGHT.foregroundDark))
+    .child(rightCell(ageOrUnknown(process.elapsed_seconds), widths.uptime, TOKYO_NIGHT.comment))
     .child(killCell(agent, host, view));
 }
 
 /** @param {boolean} isWide @param {boolean} hasSparkline */
 function tableHeader(isWide, hasSparkline) {
-  return h_flex().gap(8).text_color(TOKYO_NIGHT.comment)
-    .child(fixedCell(isWide ? COLUMN_WIDTH_PX.app : MARK_ONLY_COLUMN_PX).child(isWide ? "agent" : ""))
-    .child(fixedCell(COLUMN_WIDTH_PX.state).child("state"))
-    .child(div().flex_1().child("branch"))
+  const layout = layoutOf(isWide);
+  const widths = COLUMN_WIDTH_PX[layout];
+  return h_flex().gap(COLUMN_GAP_PX[layout]).text_color(TOKYO_NIGHT.comment)
+    .child(fixedCell(widths.app).child(isWide ? "agent" : ""))
+    .child(fixedCell(widths.state).child(isWide ? "state" : ""))
+    .child(div().flex_1().min_w(0).child("branch"))
     .when(hasSparkline, (element) => element.child(fixedCell(CPU_SPARKLINE_SIZE.widthPx).child(CPU_SPARKLINE_TITLE)))
-    .child(rightCell("cpu", COLUMN_WIDTH_PX.cpu, TOKYO_NIGHT.comment))
-    .child(rightCell("mem", COLUMN_WIDTH_PX.memory, TOKYO_NIGHT.comment))
-    .child(rightCell("up", COLUMN_WIDTH_PX.uptime, TOKYO_NIGHT.comment))
-    .child(fixedCell(COLUMN_WIDTH_PX.kill));
+    .child(rightCell("cpu", widths.cpu, TOKYO_NIGHT.comment))
+    .child(rightCell("mem", widths.memory, TOKYO_NIGHT.comment))
+    .child(rightCell("up", widths.uptime, TOKYO_NIGHT.comment))
+    .child(fixedCell(KILL_COLUMN_PX));
 }
 
 /**

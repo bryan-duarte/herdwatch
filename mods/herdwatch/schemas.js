@@ -296,8 +296,8 @@
  * @typedef {object} DialogView
  * @property {PendingAction | null} pending
  * @property {DialogState} state
- * @property {(key: string) => void} onToggleOption
- * @property {() => void} onConfirm
+ * @property {(key: string, cx: ModContext) => void} onToggleOption
+ * @property {(cx: ModContext) => void} onConfirm
  * @property {() => void} onCancel
  *
  * @typedef {object} HostSeries
@@ -388,11 +388,11 @@
  * @property {string | null} shortcut
  * @property {boolean} hasKeyboard
  * @property {boolean} isWide
- * @property {(label: string) => void} onHost
- * @property {(tab: ConsoleTab) => void} onTab
- * @property {(samples: number) => void} onRange
- * @property {(sort: ProcessSort) => void} onSort
- * @property {(filter: WorktreeFilter) => void} onWorktreeFilter
+ * @property {(label: string, cx: ModContext) => void} onHost
+ * @property {(tab: ConsoleTab, cx: ModContext) => void} onTab
+ * @property {(samples: number, cx: ModContext) => void} onRange
+ * @property {(sort: ProcessSort, cx: ModContext) => void} onSort
+ * @property {(filter: WorktreeFilter, cx: ModContext) => void} onWorktreeFilter
  * @property {boolean} showAllWorktrees  false: the worktrees tab draws the first rows and a "show more" button
  * @property {(cx: ModContext) => void} onShowAllWorktrees
  * @property {() => void} onClose

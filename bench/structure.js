@@ -20,7 +20,9 @@ class CountingSharedState extends Map {
   }
 }
 
-const fakeContext = () => ({ notify: () => {}, spawn: () => {}, timer: { every: () => {} } });
+const fakeContext = () => ({ notify: () => {}, spawn: () => {}, timer: { every: () => {} }, new: () => ({}) });
+/** The case "frame" draws the console frame on the overview tab. */
+const tabOfCase = (caseName) => (caseName === "frame" ? "overview" : caseName);
 const fakeFocusHandle = () => ({ is_focused: () => false, focus: () => {} });
 
 /** @param {string} modDir */
@@ -42,7 +44,7 @@ function benchCopy(Herdwatch, caseName, range) {
   return Object.assign(Object.create(Herdwatch.prototype), {
     role: caseName === "pill" ? "bar" : "console",
     width: CONSOLE_WIDTH_PX,
-    choices: { host: null, tab: caseName, range, filter: "all", sort: "cpu" },
+    choices: { host: null, tab: tabOfCase(caseName), range, filter: "all", sort: "cpu" },
     portNotes: {},
     focusHandle: fakeFocusHandle(),
     drawnClockKey: "",
@@ -51,11 +53,18 @@ function benchCopy(Herdwatch, caseName, range) {
   });
 }
 
+/** One redraw of a case: the frame, and for a tab case the body of the tab as well. */
+function renderCase(copy, caseName) {
+  copy.render(fakeContext());
+  const isTabCase = caseName !== "pill" && caseName !== "frame";
+  if (isTabCase && copy.renderTabBody) copy.renderTabBody();
+}
+
 /** The second render, after the first one filled any cache, as the console sees it on each redraw. */
-function countRender(copy) {
-  copy.render(fakeContext());
+function countRender(copy, caseName) {
+  renderCase(copy, caseName);
   resetCounters();
-  copy.render(fakeContext());
+  renderCase(copy, caseName);
   return { elements: counters.elements, hostCalls: counters.calls, pathOps: counters.pathOps };
 }
 
@@ -74,7 +83,9 @@ export async function measureStructure(modDir, fixture) {
   storeHistory(fixture.history);
   const structure = Object.fromEntries(RENDER_CASES.map((spec) => {
     const { caseName, range, key } = parseCase(spec);
-    return [key, countRender(benchCopy(Herdwatch, caseName, range))];
+    const copy = benchCopy(Herdwatch, caseName, range);
+    if (copy.role === "console" && copy.createTabBody) copy.createTabBody(fakeContext());
+    return [key, countRender(copy, caseName)];
   }));
   const countingState = new CountingSharedState(fakeHerdr.sharedState);
   fakeHerdr.sharedState = countingState;

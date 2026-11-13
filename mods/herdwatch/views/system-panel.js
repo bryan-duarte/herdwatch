@@ -4,7 +4,7 @@ import { isStale, percentLevel } from "../health.js";
 import { eventMarkers, samplesInRange } from "../history.js";
 import { GRADIENTS, TOKYO_NIGHT, levelColor } from "../palette.js";
 import { worktreeTotals, worktreesOfHost } from "../worktrees.js";
-import { areaChart, coreStrip, sparkline } from "./charts.js";
+import { areaChart, sparkline } from "./charts.js";
 import { ROW_LABEL_WIDTH_PX, hostTitle, meter, panel, rowLabel, text, truncatedText } from "./widgets.js";
 
 /** @typedef {import("gpui-kit").Color} Color */
@@ -17,9 +17,6 @@ import { ROW_LABEL_WIDTH_PX, hostTitle, meter, panel, rowLabel, text, truncatedT
 const CHART_HEIGHT_PX = 46;
 const RESOURCE_METER_CELLS = 20;
 const ROW_GAP_PX = 10;
-const MANY_CORES = 16;
-const WIDE_CORE_CELL_PX = 10;
-const NARROW_CORE_CELL_PX = 6;
 const NET_SPARKLINE_SAMPLES = 40;
 const NET_SPARKLINE_SIZE = { widthPx: 70, heightPx: 16 };
 /** @type {Record<HostEvent["kind"], Color>} */
@@ -63,7 +60,7 @@ function hostCharts(view, host, settings) {
   return v_flex().gap(10)
     .child(readingBlock({
       label: "cpu", glyph: "cpu", percent: host.cpu_pct, gradient: GRADIENTS.cpu,
-      detail: `${host.ncpu ?? "?"} cores`, chart: cpuChart, settings,
+      detail: "", chart: cpuChart, settings,
     }))
     .child(readingBlock({
       label: "mem", glyph: "memory-stick", percent: host.mem_pct, gradient: GRADIENTS.memory,
@@ -101,21 +98,18 @@ function networkRow(view, host) {
     truncatedText(`↓ ${byteRate(host.net_rx_rate)} ↑ ${byteRate(host.net_tx_rate)}`, TOKYO_NIGHT.dim));
 }
 
-/**
- * The per-core strip, first in the box: the quickest read of how loaded the host is.
- * @param {ConsoleView} view @param {HostSnapshot} host
- */
-function coresRow(view, host) {
-  const coreCellPx = host.cores.length > MANY_CORES || !view.isWide ? NARROW_CORE_CELL_PX : WIDE_CORE_CELL_PX;
-  return resourceRow("cores", "cpu", coreStrip(host.cores, coreCellPx));
-}
+/** @param {HostSnapshot} host */
+const coreCount = (host) => host.ncpu ?? host.cores.length;
+
+/** @param {HostSnapshot} host */
+const coresRow = (host) => resourceRow("cores", "cpu", text(String(coreCount(host)), TOKYO_NIGHT.foreground).font_semibold());
 
 /** @param {ConsoleView} view @param {HostSnapshot} host @param {MonitorSettings} settings */
 function resourceRows(view, host, settings) {
   const rows = v_flex().gap(5);
-  rows.child(meterReading({
-    label: "disk", glyph: "hard-drive", percent: host.disk_pct, gradient: GRADIENTS.disk, detail: diskDetail(host), settings,
-  }));
+  rows.child(resourceRow("disk", "hard-drive",
+    text(percentText(host.disk_pct), levelColor(percentLevel(host.disk_pct, settings))).font_semibold(),
+    truncatedText(diskDetail(host), TOKYO_NIGHT.dim)));
   rows.child(networkRow(view, host));
   if (host.gpu) {
     const videoMemory = `${mibAsGib(host.gpu.mem_used_mib)} / ${mibAsGib(host.gpu.mem_total_mib)} GiB`;
@@ -129,7 +123,7 @@ function resourceRows(view, host, settings) {
 }
 
 /**
- * The overview box of one host: the cores strip, CPU, then memory (each a reading over its chart), then
+ * The overview box of one host: the core count, CPU, then memory (each a reading over its chart), then
  * disk, network, GPU and worktree rows.
  * @param {ConsoleView} view
  * @param {HostSnapshot} host
@@ -144,6 +138,6 @@ export function systemPanel(view, host, hostNumber, settings) {
     id: `system-${host.label}`,
     title: hostTitle(host.label, hostNumber, TOKYO_NIGHT.blue),
     rightTitle: text(rightTitle, stale ? TOKYO_NIGHT.yellow : TOKYO_NIGHT.comment),
-    body: [...(host.cores.length ? [coresRow(view, host)] : []), hostCharts(view, host, settings), resourceRows(view, host, settings)],
+    body: [...(coreCount(host) ? [coresRow(host)] : []), hostCharts(view, host, settings), resourceRows(view, host, settings)],
   });
 }

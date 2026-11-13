@@ -27,7 +27,6 @@ export const GRADIENTS = /** @type {const} */ ({
   cpu: [TOKYO_NIGHT.green, TOKYO_NIGHT.yellow, TOKYO_NIGHT.red],
   memory: [TOKYO_NIGHT.cyan, TOKYO_NIGHT.blue, TOKYO_NIGHT.magenta],
   swap: [TOKYO_NIGHT.purple, TOKYO_NIGHT.magenta, TOKYO_NIGHT.red],
-  disk: [TOKYO_NIGHT.teal, TOKYO_NIGHT.yellow, TOKYO_NIGHT.red],
   storage: [TOKYO_NIGHT.teal, TOKYO_NIGHT.orange, TOKYO_NIGHT.red],
 });
 

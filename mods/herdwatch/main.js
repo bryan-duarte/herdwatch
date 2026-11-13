@@ -10,15 +10,17 @@ import { FOCUS_COMMAND, MONOSPACE_FONT, TOGGLE_COMMAND } from "./mod.js";
 import { clearPendingAction, readPendingAction, storePendingAction } from "./pending-action.js";
 import { Poller } from "./poller.js";
 import { loadConsoleChoices, readDocker, readMonitorData, readMonitorState, readWorktrees, saveConsoleChoices } from "./store.js";
+import { TabBody } from "./tab-body.js";
 import { OPENING_TUNNEL_NOTE, portNoteKey, runningTunnels, startTunnel, stopTunnel, tunnelOfPort } from "./tunnels.js";
 import { renderBar } from "./views/bar.js";
 import { renderConfirmDialog } from "./views/confirm-dialog.js";
-import { renderConsole } from "./views/console.js";
+import { renderConsole, renderConsoleBody } from "./views/console.js";
 
 /** @typedef {import("gpui-kit").KeyEvent} KeyEvent */
 /** @typedef {import("./action-dialogs.js").DialogCopy} DialogCopy */
 /** @typedef {import("./schemas.js").ActionResult} ActionResult */
 /** @typedef {import("./schemas.js").ConsoleChoices} ConsoleChoices */
+/** @typedef {import("./schemas.js").ConsoleTab} ConsoleTab */
 /** @typedef {import("./schemas.js").ConsoleView} ConsoleView */
 /** @typedef {import("./schemas.js").CopyRole} CopyRole */
 /** @typedef {import("./schemas.js").DialogState} DialogState */
@@ -27,6 +29,7 @@ import { renderConsole } from "./views/console.js";
 /** @typedef {import("./schemas.js").ListeningPort} ListeningPort */
 /** @typedef {import("./schemas.js").ModAsyncContext} ModAsyncContext */
 /** @typedef {import("./schemas.js").ModContext} ModContext */
+/** @typedef {import("./schemas.js").MonitorData} MonitorData */
 /** @typedef {import("./schemas.js").PendingAction} PendingAction */
 /** @typedef {import("./schemas.js").PortActions} PortActions */
 /** @typedef {import("./schemas.js").ProcessSort} ProcessSort */
@@ -122,10 +125,48 @@ export default class Herdwatch extends View {
     this.checkingPruneOn = null;
     /** Not saved: another host or filter goes back to the short list. */
     this.showAllWorktrees = false;
+    this.createTabBody(cx);
     const refreshSeconds = readMonitorState()?.snapshot?.settings?.pane_refresh;
     const refreshMs = Number.isFinite(refreshSeconds) ? refreshSeconds * MILLISECONDS_PER_SECOND : DEFAULT_CONSOLE_REFRESH_MS;
     cx.timer.every(refreshMs, (timerCx) => this.refreshClock(timerCx));
     handleCommands(cx, { [FOCUS_COMMAND]: () => this.focusHandle.focus() });
+  }
+
+  /**
+   * The retained view that draws the body of the open tab. Herdr refuses to make a view during render, so init and the
+   * clock make it. It stays mounted, so a tab switch builds it again in place.
+   * @param {ModContext | ModAsyncContext} cx
+   */
+  createTabBody(cx) {
+    /** The body key the body was last drawn with. */
+    this.drawnBodyKey = "";
+    // gpui-kit.d.ts writes cx.new as `new(...)`, which TypeScript reads as a construct signature, not a method.
+    /** @type {import("gpui-kit").Entity | null} */
+    this.tabBody = /** @type {any} */ (cx).new(TabBody, { owner: this });
+  }
+
+  /**
+   * Everything that the body of the open tab draws, as one string: the body is built again only when this changes.
+   * @param {MonitorData} data one shared read, because each read copies the whole state
+   */
+  bodyKey({ monitorState, signatures } = readMonitorData()) {
+    const snapshot = monitorState?.snapshot ?? null;
+    const { tab, host, range, sort, filter } = this.choices;
+    return JSON.stringify([
+      tab, host, range, sort, filter, this.width >= WIDE_CONSOLE_PX, this.showAllWorktrees, this.checkingPruneOn, this.portNotes,
+      snapshot?.generated_at ?? null, monitorState?.error ?? null, signatures, clockKey(snapshot, nowInSeconds()),
+      herdrAgents(), runningTunnels().map((tunnel) => tunnel.terminal),
+    ]);
+  }
+
+  /**
+   * Builds the body of the open tab again when something it draws changed. Herdr refuses a notify during render,
+   * so the clock, the clicks and the tasks call this.
+   * @param {ModContext | ModAsyncContext} cx
+   */
+  refreshShownBody(cx) {
+    if (!this.tabBody || this.drawnBodyKey === this.bodyKey()) return;
+    cx.notify(this.tabBody);
   }
 
   /** The pending action dies with its dialog, also when Esc or a click closes it. */
@@ -134,14 +175,21 @@ export default class Herdwatch extends View {
   }
 
   /**
-   * New data redraws the console through the poll; the clock redraws it only when a time text would change.
+   * New data redraws the console frame through the poll, and the frame again when a time text would change. The body
+   * of the open tab is built again here when new data, a time text or a choice changed what it draws.
    * @param {ModContext} cx
    */
   refreshClock(cx) {
+    if (!this.tabBody) {
+      this.createTabBody(cx);
+      cx.notify();
+    }
     const nextClockKey = clockKey(readMonitorState()?.snapshot ?? null, nowInSeconds());
-    if (nextClockKey === this.drawnClockKey) return;
-    this.drawnClockKey = nextClockKey;
-    cx.notify();
+    if (nextClockKey !== this.drawnClockKey) {
+      this.drawnClockKey = nextClockKey;
+      cx.notify();
+    }
+    this.refreshShownBody(cx);
   }
 
   /** @param {Partial<ConsoleChoices>} change @param {ModContext} cx */
@@ -154,6 +202,7 @@ export default class Herdwatch extends View {
     this.choices = nextChoices;
     saveConsoleChoices(this.choices);
     cx.notify();
+    this.refreshShownBody(cx);
   }
 
   /**
@@ -189,7 +238,9 @@ export default class Herdwatch extends View {
     const wasWide = this.width >= WIDE_CONSOLE_PX;
     const isWide = nextWidth >= WIDE_CONSOLE_PX;
     this.width = nextWidth;
-    if (wasWide !== isWide) cx.notify();
+    if (wasWide === isWide) return;
+    cx.notify();
+    this.refreshShownBody(cx);
   }
 
   /** @param {DialogCopy} copy */
@@ -202,7 +253,7 @@ export default class Herdwatch extends View {
   setPortNote(key, note, cx) {
     const { [key]: _previous, ...otherNotes } = this.portNotes;
     this.portNotes = note === null ? otherNotes : { ...otherNotes, [key]: note };
-    cx.notify();
+    this.refreshShownBody(cx);
   }
 
   /** @param {string} label @param {ListeningPort} port @param {ModContext} cx */
@@ -234,7 +285,7 @@ export default class Herdwatch extends View {
   stopTunnelOf(tunnel, cx) {
     cx.spawn(async (/** @type {ModAsyncContext} */ asyncCx) => {
       await stopTunnel(tunnel);
-      asyncCx.notify();
+      this.refreshShownBody(asyncCx);
     });
   }
 
@@ -245,11 +296,11 @@ export default class Herdwatch extends View {
   askToPrune(host, cx) {
     if (this.checkingPruneOn) return;
     this.checkingPruneOn = host.label;
-    cx.notify();
+    this.refreshShownBody(cx);
     cx.spawn(async (/** @type {ModAsyncContext} */ asyncCx) => {
       const preview = await runAction("docker-prune", host.label, ["--preview"]);
       this.checkingPruneOn = null;
-      asyncCx.notify();
+      this.refreshShownBody(asyncCx);
       if (preview.ok === false) {
         notify({ title: "herdwatch: Docker prune", body: preview.message, level: "warning" });
         return;
@@ -268,9 +319,13 @@ export default class Herdwatch extends View {
     };
   }
 
-  /** @param {ModContext} cx @returns {ConsoleView} */
-  consoleView(cx) {
-    const { monitorState, history, signatures } = readMonitorData();
+  /**
+   * The callbacks take the context of their own click: a context kept from a render is stale by the time of a click.
+   * @param {ConsoleTab} tab
+   * @param {MonitorData} data one shared read, because each read copies the whole state
+   * @returns {ConsoleView}
+   */
+  consoleView(tab, { monitorState, history, signatures } = readMonitorData()) {
     const host = shownHost(monitorState?.snapshot?.hosts ?? [], this.choices.host);
     return {
       monitorState,
@@ -282,18 +337,18 @@ export default class Herdwatch extends View {
       checkingPruneOn: this.checkingPruneOn,
       host,
       agents: host ? agentViews(host, history, herdrAgents()) : [],
-      tab: this.choices.tab,
+      tab,
       rangeSamples: this.choices.range,
       sort: this.choices.sort,
       worktreeFilter: this.choices.filter,
       shortcut: toggleShortcutLabel(),
       hasKeyboard: this.focusHandle.is_focused(),
       isWide: this.width >= WIDE_CONSOLE_PX,
-      onHost: (label) => this.choose({ host: label }, cx),
-      onTab: (tab) => this.choose({ tab }, cx),
-      onRange: (range) => this.choose({ range }, cx),
-      onSort: (sort) => this.choose({ sort }, cx),
-      onWorktreeFilter: (filter) => this.choose({ filter }, cx),
+      onHost: (label, clickCx) => this.choose({ host: label }, clickCx),
+      onTab: (nextTab, clickCx) => this.choose({ tab: nextTab }, clickCx),
+      onRange: (range, clickCx) => this.choose({ range }, clickCx),
+      onSort: (sort, clickCx) => this.choose({ sort }, clickCx),
+      onWorktreeFilter: (filter, clickCx) => this.choose({ filter }, clickCx),
       showAllWorktrees: this.showAllWorktrees,
       onShowAllWorktrees: (clickCx) => this.showEveryWorktree(clickCx),
       onClose: closeConsole,
@@ -308,7 +363,7 @@ export default class Herdwatch extends View {
   /** @param {ModContext} cx */
   showEveryWorktree(cx) {
     this.showAllWorktrees = true;
-    cx.notify();
+    this.refreshShownBody(cx);
   }
 
   /** @param {string} key @param {ModContext} cx */
@@ -368,37 +423,61 @@ export default class Herdwatch extends View {
     if (event.key === CANCEL_KEY) this.cancelDialog();
   }
 
-  /** @param {ModContext} cx @returns {DialogView} */
-  dialogView(cx) {
+  /** @returns {DialogView} the callbacks take the context of their own click */
+  dialogView() {
     return {
       pending: readPendingAction(this.dialog.pendingId),
       state: this.dialog,
-      onToggleOption: (key) => this.toggleDialogOption(key, cx),
-      onConfirm: () => this.confirmDialog(cx),
+      onToggleOption: (key, clickCx) => this.toggleDialogOption(key, clickCx),
+      onConfirm: (clickCx) => this.confirmDialog(clickCx),
       onCancel: () => this.cancelDialog(),
     };
   }
 
-  /** @param {ModContext} cx */
-  renderDialog(cx) {
-    return renderConfirmDialog(this.dialogView(cx), MONOSPACE_FONT)
+  renderDialog() {
+    return renderConfirmDialog(this.dialogView(), MONOSPACE_FONT)
       .track_focus(this.focusHandle)
       .on_key_down((/** @type {KeyEvent} */ event, /** @type {ModContext} */ keyCx) => this.handleDialogKey(event, keyCx));
   }
 
-  /** @param {ModContext} cx */
-  renderConsolePane(cx) {
-    return renderConsole(this.consoleView(cx), MONOSPACE_FONT)
+  /**
+   * The body of the open tab, drawn by the TabBody. It notes the body key it was drawn with, so refreshShownBody knows
+   * when the body is out of date.
+   */
+  renderTabBody() {
+    const data = readMonitorData();
+    this.drawnBodyKey = this.bodyKey(data);
+    return renderConsoleBody(this.consoleView(this.choices.tab, data));
+  }
+
+  /**
+   * The frame with the retained body. If Herdr refuses to mount the body (a released view), the frame draws the body
+   * itself, and the clock makes a new TabBody.
+   */
+  consoleWithBody() {
+    const frameView = this.consoleView(this.choices.tab);
+    if (this.tabBody) {
+      try {
+        return renderConsole(frameView, MONOSPACE_FONT, this.tabBody);
+      } catch (mountError) {
+        console.log("herdwatch_tab_body_not_mounted", String(mountError));
+        this.tabBody = null;
+      }
+    }
+    return renderConsole(frameView, MONOSPACE_FONT, this.renderTabBody());
+  }
+
+  renderConsolePane() {
+    return this.consoleWithBody()
       .track_focus(this.focusHandle)
       .on_key_down((/** @type {KeyEvent} */ event, /** @type {ModContext} */ keyCx) => this.handleConsoleKey(event, keyCx))
       .on_mouse_down("left", (/** @type {unknown} */ _event, /** @type {ModContext} */ mouseCx) => this.takeKeyboard(mouseCx))
       .on_size_change((/** @type {{ width: number }} */ size, /** @type {ModContext} */ sizeCx) => this.updateWidth(size.width, sizeCx));
   }
 
-  /** @param {ModContext} cx */
-  render(cx) {
-    if (this.role === "dialog") return this.renderDialog(cx);
-    if (this.role === "console") return this.renderConsolePane(cx);
+  render() {
+    if (this.role === "dialog") return this.renderDialog();
+    if (this.role === "console") return this.renderConsolePane();
     const barView = {
       monitorState: readMonitorState(),
       isConsoleOpen: isConsoleOpenInFocusedTab(),

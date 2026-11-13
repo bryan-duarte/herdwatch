@@ -41,7 +41,7 @@ function sortableHeader(sort, view) {
   const header = h_flex().id(`column-${sort}`).w(COLUMN_WIDTH_PX.percent).flex_none().justify_end().px(4).rounded(3)
     .text_color(isActive ? TOKYO_NIGHT.blue : TOKYO_NIGHT.comment)
     .child(isActive ? `${column} ${SORT_MARKER}` : column);
-  return pressable(withIdleStates(header), `Sort by ${name} (${key})`, () => view.onSort(sort));
+  return pressable(withIdleStates(header), `Sort by ${name} (${key})`, (cx) => view.onSort(sort, cx));
 }
 
 /** @param {ConsoleView} view */
