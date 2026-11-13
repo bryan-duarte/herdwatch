@@ -5,15 +5,14 @@ import { TOKYO_NIGHT, gradientAt } from "../palette.js";
 
 const PERCENT_SCALE = 100;
 const GRID_LINE_PERCENTS = [25, 50, 75];
-const AREA_OPACITY = 0.32;
 const SPARKLINE_AREA_OPACITY = 0.16;
-const LINE_WIDTH_PX = 1.5;
-const SECOND_LINE_WIDTH_PX = 1.3;
-const SECOND_LINE_DASH = [3, 2];
-const END_DOT_SIZE_PX = 5;
+const SPARKLINE_LINE_WIDTH_PX = 1.3;
+const COLUMN_SHARE_OF_SLOT = 0.7;
+const MIN_COLUMN_PERCENT = 3;
+const COLOR_BANDS = 10;
+const SCALE_TEXT_SIZE_PX = 9;
 const MARKER_SIZE_PX = 6;
 const MARKER_LINE_OPACITY = 0.55;
-const VERTICAL_GRADIENT_ANGLE = 0;
 
 /**
  * @typedef {object} ChartMarkerLook
@@ -23,15 +22,11 @@ const VERTICAL_GRADIENT_ANGLE = 0;
  */
 
 /**
- * @typedef {object} AreaChartOptions
+ * @typedef {object} ColumnChartOptions
  * @property {(number | null)[]} samples
  * @property {number} heightPx
  * @property {readonly Color[]} gradient
- * @property {number} [maximum]
- * @property {(number | null)[] | null} [secondLine]
- * @property {Color} [secondLineColor]
  * @property {ChartMarkerLook[]} [markers]
- * @property {boolean} [grid]
  */
 
 /** @typedef {{ index: number, sample: number }} ChartPoint */
@@ -105,10 +100,9 @@ function areaPath(runs) {
   return builder.build();
 }
 
-/** @param {ChartCoordinate[][]} runs @param {number} widthPx @param {readonly number[] | null} dash */
-function linePath(runs, widthPx, dash = null) {
+/** @param {ChartCoordinate[][]} runs @param {number} widthPx */
+function linePath(runs, widthPx) {
   const builder = PathBuilder.stroke(widthPx);
-  if (dash) builder.dash_array(dash);
   for (const run of runs) {
     run.forEach((point, position) => {
       if (position === 0) builder.move_to(point.x, point.y);
@@ -118,9 +112,50 @@ function linePath(runs, widthPx, dash = null) {
   return builder.build();
 }
 
-/** @param {readonly Color[]} gradient @param {number} opacity */
-const verticalGradient = (gradient, opacity) =>
-  Background.linear_gradient(VERTICAL_GRADIENT_ANGLE, Background.stop(gradient[0], 0), Background.stop(gradient[gradient.length - 1], PERCENT_SCALE)).opacity(opacity);
+/** @type {Map<number, { left: `${number}%`, right: `${number}%` }[]>} */
+const columnEdgesOfCount = new Map();
+
+/**
+ * The left and right x of each column of a chart with count slots: the same on every render with that range.
+ * @param {number} count
+ */
+function columnEdges(count) {
+  const known = columnEdgesOfCount.get(count);
+  if (known) return known;
+  const slotPercent = PERCENT_SCALE / count;
+  const edges = Array.from({ length: count }, (_unused, index) => ({
+    left: percentCoordinate(index * slotPercent),
+    right: percentCoordinate((index + COLUMN_SHARE_OF_SLOT) * slotPercent),
+  }));
+  columnEdgesOfCount.set(count, edges);
+  return edges;
+}
+
+/**
+ * One column for each sample, colored by its value on the gradient. The columns of one color band are one polygon
+ * that runs along the bottom edge from column to column, so a chart costs one call for each band, not one for each
+ * sample. A missing sample leaves its slot empty.
+ * @param {(number | null)[]} samples
+ * @param {readonly Color[]} gradient
+ */
+function columnPaths(samples, gradient) {
+  const edges = columnEdges(samples.length);
+  /** @type {Map<number, [`${number}%`, `${number}%` | "100%"][]>} */
+  const outlineOfBand = new Map();
+  samples.forEach((sample, index) => {
+    if (!Number.isFinite(sample)) return;
+    const level = Math.min(Math.max(sample, 0), PERCENT_SCALE) / PERCENT_SCALE;
+    const band = Math.min(COLOR_BANDS - 1, Math.floor(level * COLOR_BANDS));
+    if (!outlineOfBand.has(band)) outlineOfBand.set(band, []);
+    const { left, right } = edges[index];
+    const top = percentCoordinate(Math.min(yPercent(sample, PERCENT_SCALE), PERCENT_SCALE - MIN_COLUMN_PERCENT));
+    outlineOfBand.get(band).push([left, "100%"], [left, top], [right, top], [right, "100%"]);
+  });
+  return [...outlineOfBand].map(([band, outline]) => ({
+    path: PathBuilder.fill().add_polygon(outline, true).build(),
+    color: gradientAt(gradient, (band + 0.5) / COLOR_BANDS),
+  }));
+}
 
 /** @param {ChartMarkerLook} marker */
 function markerElement(marker) {
@@ -130,36 +165,23 @@ function markerElement(marker) {
     .tooltip(marker.text);
 }
 
-/** @param {(number | null)[]} samples @param {number} maximum @param {readonly Color[]} gradient */
-function endDot(samples, maximum, gradient) {
-  const lastIndex = samples.length - 1;
-  const lastSample = samples[lastIndex];
-  return div().absolute().size(END_DOT_SIZE_PX).rounded(END_DOT_SIZE_PX)
-    .left(percentCoordinate(xPercent(lastIndex, samples.length))).top(percentCoordinate(yPercent(lastSample, maximum)))
-    .ml(-END_DOT_SIZE_PX).mt(-END_DOT_SIZE_PX / 2).bg(gradientAt(gradient, Math.min(lastSample, maximum) / maximum));
-}
-
 /** @param {number} percent */
 const gridLine = (percent) => div().absolute().left(0).right(0).top(`${percent}%`).h(1).bg(TOKYO_NIGHT.highlight);
 
+/** The 100% mark on the top edge, so a short column reads as a low value and not as a small chart. */
+const scaleText = () => div().absolute().top(0).right(3).text_size(SCALE_TEXT_SIZE_PX).text_color(TOKYO_NIGHT.comment).child("100%");
+
 /**
- * A btop history chart: gradient area, a gradient line, an optional dashed second line, event markers and an end dot.
- * @param {AreaChartOptions} options
+ * A btop history chart in columns, from 0 to 100%: one column for each sample, colored by its value, with the grid,
+ * the 100% mark and event markers. The newest sample is the column at the right edge.
+ * @param {ColumnChartOptions} options
  */
-export function areaChart({ samples, heightPx, gradient, maximum = PERCENT_SCALE, secondLine = null, secondLineColor = TOKYO_NIGHT.purple, markers = [], grid = true }) {
+export function columnChart({ samples, heightPx, gradient, markers = [] }) {
   const chart = div().relative().w_full().h(heightPx).rounded(3).bg(TOKYO_NIGHT.backgroundDark).overflow_hidden();
-  if (grid) GRID_LINE_PERCENTS.forEach((percent) => chart.child(gridLine(percent)));
-  const runs = drawableRuns(samples, maximum);
-  if (runs.length) {
-    chart.child(window.paint_path(areaPath(runs), verticalGradient(gradient, AREA_OPACITY)).absolute().size_full());
-    chart.child(window.paint_path(linePath(runs, LINE_WIDTH_PX), verticalGradient(gradient, 1)).absolute().size_full());
-  }
-  const secondRuns = secondLine ? drawableRuns(secondLine, maximum) : [];
-  if (secondRuns.length) {
-    chart.child(window.paint_path(linePath(secondRuns, SECOND_LINE_WIDTH_PX, SECOND_LINE_DASH), secondLineColor).absolute().size_full());
-  }
+  GRID_LINE_PERCENTS.forEach((percent) => chart.child(gridLine(percent)));
+  columnPaths(samples, gradient).forEach(({ path, color }) => chart.child(window.paint_path(path, color).absolute().size_full()));
+  chart.child(scaleText());
   markers.forEach((marker) => chart.child(markerElement(marker)));
-  if (Number.isFinite(samples[samples.length - 1])) chart.child(endDot(samples, maximum, gradient));
   return chart;
 }
 
@@ -176,5 +198,5 @@ export function sparkline(samples, color, { widthPx, heightPx }, maximum = PERCE
   if (!runs.length) return chart;
   return chart
     .child(window.paint_path(areaPath(runs), Background.solid(color).opacity(SPARKLINE_AREA_OPACITY)).absolute().size_full())
-    .child(window.paint_path(linePath(runs, SECOND_LINE_WIDTH_PX), color).absolute().size_full());
+    .child(window.paint_path(linePath(runs, SPARKLINE_LINE_WIDTH_PX), color).absolute().size_full());
 }
