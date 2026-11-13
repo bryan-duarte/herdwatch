@@ -303,6 +303,7 @@
  * @typedef {object} HostSeries
  * @property {number[]} at
  * @property {(number | null)[]} cpu
+ * @property {(number | null)[]} mem
  * @property {(number | null)[]} rx
  * @property {(number | null)[]} tx
  *

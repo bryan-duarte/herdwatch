@@ -1,11 +1,11 @@
 import { h_flex, v_flex } from "gpui-base";
-import { ageOrUnknown, ageSince, byteRate, kibAsGib, mibAsGib, percentText, storageSize } from "../format.js";
+import { ageOrUnknown, ageSince, byteRate, kibAsGib, mibAsGib, minutesText, percentText, storageSize } from "../format.js";
 import { isStale, percentLevel } from "../health.js";
-import { eventMarkers, samplesInRange } from "../history.js";
+import { SECONDS_PER_SAMPLE, eventMarkers, samplesInRange } from "../history.js";
 import { GRADIENTS, TOKYO_NIGHT, levelColor } from "../palette.js";
 import { worktreeTotals, worktreesOfHost } from "../worktrees.js";
-import { areaChart, sparkline } from "./charts.js";
-import { ROW_LABEL_WIDTH_PX, hostTitle, meter, panel, rowLabel, text, truncatedText } from "./widgets.js";
+import { columnChart, sparkline } from "./charts.js";
+import { ROW_LABEL_WIDTH_PX, hostTitle, meter, panel, panelTitle, rowLabel, text, truncatedText } from "./widgets.js";
 
 /** @typedef {import("gpui-kit").Color} Color */
 /** @typedef {import("../schemas.js").ConsoleView} ConsoleView */
@@ -14,7 +14,8 @@ import { ROW_LABEL_WIDTH_PX, hostTitle, meter, panel, rowLabel, text, truncatedT
 /** @typedef {import("../schemas.js").HostSnapshot} HostSnapshot */
 /** @typedef {import("../schemas.js").MonitorSettings} MonitorSettings */
 
-const CHART_HEIGHT_PX = 46;
+const CHART_HEIGHT_PX = 40;
+const AXIS_TEXT_SIZE_PX = 10;
 const RESOURCE_METER_CELLS = 20;
 const ROW_GAP_PX = 10;
 const NET_SPARKLINE_SAMPLES = 40;
@@ -33,30 +34,62 @@ const resourceRow = (label, glyph, ...cells) => h_flex().gap(ROW_GAP_PX).items_c
 const meterReading = ({ label, glyph, percent, gradient, detail, settings }) => v_flex().gap(2)
   .child(resourceRow(label, glyph, meter(percent, RESOURCE_METER_CELLS, gradient)))
   .child(h_flex().pl(ROW_LABEL_WIDTH_PX + ROW_GAP_PX).gap(8).items_center()
-    .child(text(percentText(percent), levelColor(percentLevel(percent, settings))).font_semibold())
+    .child(percentCell(percent, settings))
     .child(truncatedText(detail, TOKYO_NIGHT.dim)));
 
+/** @param {number | null} percent @param {MonitorSettings} settings */
+const percentCell = (percent, settings) => text(percentText(percent), levelColor(percentLevel(percent, settings))).font_semibold();
+
+/** The time scale under a history chart: the range on the left, now on the right. @param {string} rangeText */
+const timeAxis = (rangeText) => h_flex().justify_between().text_size(AXIS_TEXT_SIZE_PX).text_color(TOKYO_NIGHT.comment)
+  .child(`${rangeText} ago`).child("now");
+
 /**
- * CPU, the reading that moves most: one full-width block, with its chart under it at the full width of the box.
- * @param {Parameters<typeof meterReading>[0] & { chart: Element }} block
+ * @typedef {object} MetricBoxOptions
+ * @property {string} id
+ * @property {string} label
+ * @property {import("./widgets.js").UiGlyph} glyph
+ * @property {number | null} percent
+ * @property {readonly Color[]} gradient
+ * @property {string} detail
+ * @property {(number | null)[]} samples
+ * @property {import("./charts.js").ChartMarkerLook[]} [markers]
+ * @property {string} rangeText
+ * @property {MonitorSettings} settings
  */
-const readingBlock = ({ chart, ...reading }) => v_flex().w_full().gap(4).child(meterReading(reading)).child(chart);
+
+/**
+ * CPU or memory in a box of its own, with the name in the top edge: the meter, the percent and the detail under it,
+ * then the history in columns over its time axis. Inside the box, the chart can only belong to that reading.
+ * @param {MetricBoxOptions} metric
+ */
+const metricBox = ({ id, label, glyph, percent, gradient, detail, samples, markers = [], rangeText, settings }) => panel({
+  id,
+  title: panelTitle(glyph, label, gradient[0]),
+  body: [
+    v_flex().gap(2)
+      .child(meter(percent, RESOURCE_METER_CELLS, gradient))
+      .child(h_flex().gap(8).items_center().child(percentCell(percent, settings)).child(truncatedText(detail, TOKYO_NIGHT.dim))),
+    v_flex().gap(2).child(columnChart({ samples, heightPx: CHART_HEIGHT_PX, gradient, markers })).child(timeAxis(rangeText)),
+  ],
+});
 
 /** @param {ConsoleView} view @param {HostSnapshot} host @param {MonitorSettings} settings */
 function hostCharts(view, host, settings) {
   const series = view.history.hosts[host.label];
+  const rangeText = minutesText(view.rangeSamples * SECONDS_PER_SAMPLE);
   const markers = eventMarkers(view.history, host.label, view.rangeSamples)
     .map((marker) => ({ position: marker.position, color: EVENT_COLORS[marker.kind], text: marker.text }));
-  const cpuChart = areaChart({ samples: samplesInRange(series?.cpu, view.rangeSamples), heightPx: CHART_HEIGHT_PX, gradient: GRADIENTS.cpu, markers });
   const swap = Number.isFinite(host.swap_pct) && Number(host.swap_pct) > 0 ? ` · swap ${percentText(host.swap_pct)}` : "";
   return v_flex().gap(10)
-    .child(readingBlock({
-      label: "cpu", glyph: "cpu", percent: host.cpu_pct, gradient: GRADIENTS.cpu,
-      detail: "", chart: cpuChart, settings,
+    .child(metricBox({
+      id: `cpu-box-${host.label}`, label: "cpu", glyph: "cpu", percent: host.cpu_pct, gradient: GRADIENTS.cpu, detail: "",
+      samples: samplesInRange(series?.cpu, view.rangeSamples), markers, rangeText, settings,
     }))
-    .child(meterReading({
-      label: "mem", glyph: "memory-stick", percent: host.mem_pct, gradient: GRADIENTS.memory,
-      detail: `${kibAsGib(host.mem_used_kb)} / ${kibAsGib(host.mem_total_kb)} GiB${swap}`, settings,
+    .child(metricBox({
+      id: `mem-box-${host.label}`, label: "mem", glyph: "memory-stick", percent: host.mem_pct, gradient: GRADIENTS.memory,
+      detail: `${kibAsGib(host.mem_used_kb)} / ${kibAsGib(host.mem_total_kb)} GiB${swap}`,
+      samples: samplesInRange(series?.mem, view.rangeSamples), rangeText, settings,
     }));
 }
 
@@ -116,8 +149,8 @@ function resourceRows(view, host, settings) {
 }
 
 /**
- * The overview box of one host: the core count, CPU over its chart, the memory reading, then
- * disk, network, GPU and worktree rows.
+ * The overview box of one host: the core count, CPU and memory (each in its own box with its history chart),
+ * then disk, network, GPU and worktree rows.
  * @param {ConsoleView} view
  * @param {HostSnapshot} host
  * @param {number} hostNumber
