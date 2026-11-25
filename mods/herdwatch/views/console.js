@@ -155,9 +155,9 @@ function unreachablePanel(host, hostNumber, settings) {
   });
 }
 
-/** @param {HostSnapshot} host */
-function hostNotesPanel(host) {
-  const lines = host.problems.map(hostProblemGuidance).map(({ summary, nextStep }) => `${summary} ${nextStep}`);
+/** @param {HostSnapshot} host @param {MonitorSettings} settings */
+function hostNotesPanel(host, settings) {
+  const lines = host.problems.map((problem) => hostProblemGuidance(problem, settings)).map(({ summary, nextStep }) => `${summary} ${nextStep}`);
   return panel({
     id: `notes-${host.label}`,
     title: titleRow(uiIcon("triangle-alert").text_color(TOKYO_NIGHT.yellow), text("host notes", TOKYO_NIGHT.yellow)),
@@ -201,7 +201,7 @@ function tabBody(view) {
   const hostNumber = snapshot.hosts.indexOf(host) + 1;
   if (host.state === "pending") return [waitingPanel(host, hostNumber)];
   const unreachableNote = host.state === "ok" ? [] : [unreachablePanel(host, hostNumber, snapshot.settings)];
-  const hostNotes = host.problems.length ? [hostNotesPanel(host)] : [];
+  const hostNotes = host.problems.length ? [hostNotesPanel(host, snapshot.settings)] : [];
   return [...unreachableNote, ...hostNotes, ...tabPanels(view, host, hostNumber, snapshot.settings)];
 }
 

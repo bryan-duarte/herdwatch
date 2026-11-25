@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-SNAPSHOT_FORMAT_VERSION=3
+SNAPSHOT_FORMAT_VERSION=4
 
 herdwatch_json_string() {
   HERDWATCH_JSON_TEXT="$1" awk 'BEGIN { text = ENVIRON["HERDWATCH_JSON_TEXT"]; gsub(/\\/, "\\\\", text); gsub(/"/, "\\\"", text); printf "\"%s\"", text }'
@@ -43,8 +43,8 @@ herdwatch_json_bool() {
 }
 
 herdwatch_print_settings_json() {
-  printf '{"warn":%s,"crit":%s,"top_n":%s,"ssh_timeout":%s,"pane_refresh":%s,"stale_seconds":%s,"worktree_interval":%s,"worktree_timeout":%s,"docker_interval":%s,"alerts":%s,"docker":%s}' \
-    "$WARN" "$CRIT" "$TOP_N" "$SSH_TIMEOUT" "$PANE_REFRESH" "$STALE_SECONDS" "$WORKTREE_INTERVAL" "$WORKTREE_TIMEOUT" \
+  printf '{"warn":%s,"crit":%s,"top_n":%s,"ssh_timeout":%s,"probe_timeout":%s,"pane_refresh":%s,"stale_seconds":%s,"worktree_interval":%s,"worktree_timeout":%s,"docker_interval":%s,"alerts":%s,"docker":%s}' \
+    "$WARN" "$CRIT" "$TOP_N" "$SSH_TIMEOUT" "$PROBE_TIMEOUT" "$PANE_REFRESH" "$STALE_SECONDS" "$WORKTREE_INTERVAL" "$WORKTREE_TIMEOUT" \
     "$DOCKER_INTERVAL" "$(herdwatch_json_bool "$ALERTS")" "$(herdwatch_json_bool "$DOCKER")"
 }
 

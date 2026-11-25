@@ -15,9 +15,9 @@
  * @typedef {"dialog" | "console" | "bar"} CopyRole
  *
  * @typedef {"timeout" | "hostkey" | "tailscale_check" | "login" | "dns" | "refused" | "unreachable"
- *   | "ssh_config" | "remote_shell" | "probe_format" | "parse_failed" | "unknown"} FailureReason
+ *   | "ssh_config" | "remote_shell" | "probe_format" | "probe_slow" | "parse_failed" | "unknown"} FailureReason
  *
- * @typedef {"missing_tools" | "unsupported_os" | "ports_hidden"} HostProblemReason
+ * @typedef {"missing_tools" | "unsupported_os" | "ports_hidden" | "probe_slow"} HostProblemReason
  *
  * @typedef {object} HostProblem
  * @property {HostProblemReason} reason
@@ -196,6 +196,7 @@
  * @property {number} crit
  * @property {number} top_n
  * @property {number} ssh_timeout
+ * @property {number} probe_timeout
  * @property {number} pane_refresh
  * @property {number} stale_seconds
  * @property {number} worktree_interval

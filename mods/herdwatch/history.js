@@ -1,3 +1,4 @@
+import { SNAPSHOT_TIMEOUT_MS } from "./backend.js";
 import { isRecord } from "./snapshot.js";
 
 /** @typedef {import("./schemas.js").ChartMarker} ChartMarker */
@@ -15,6 +16,9 @@ export const AGENT_HISTORY_SAMPLES = 30;
 const EVENT_WINDOW_SECONDS = 600;
 const MAX_EVENTS_PER_HOST = 40;
 const HISTORY_PARTS = ["hosts", "agents", "events", "pids"];
+const MILLISECONDS_PER_SECOND = 1000;
+/** A longer time between two samples means that no poll ran (the computer slept, or Herdr was closed), not a slow poll. */
+const POLLER_STOPPED_SECONDS = SNAPSHOT_TIMEOUT_MS / MILLISECONDS_PER_SECOND;
 
 /** @returns {MonitorHistory} */
 export const emptyHistory = () => ({ hosts: {}, agents: {}, events: {}, pids: {} });
@@ -42,21 +46,46 @@ export const agentKey = (label, pid) => `${label}:${pid}`;
 const appendLimited = (list, sample, limit) => [...(list ?? []), sample].slice(-limit);
 
 /**
- * A host that did not answer adds a gap, so its chart shows when it was down.
+ * A poll that brought no new values adds a gap, so the chart shows when the host was down or too slow.
+ * A host that failed its last poll can still show "ok" (a grace poll, or a slow probe), with the values of an older poll.
  * @param {(number | null)[] | undefined} series
  * @param {HostSnapshot} host
  * @param {number | null} reading
  */
-const appendReading = (series, host, reading) => appendLimited(series, host.state === "ok" ? reading : null, HISTORY_SAMPLES);
+const appendReading = (series, host, reading) =>
+  appendLimited(series, host.state === "ok" && host.updated_at === host.polled_at ? reading : null, HISTORY_SAMPLES);
+
+/**
+ * The times of the samples that no poll took, when the poller stopped. A chart counts columns, not seconds, so
+ * without these gaps the values from before a sleep would show as the last minutes.
+ * @param {HostSeries | undefined} previous
+ * @param {number} now
+ * @returns {number[]}
+ */
+function missedSampleTimes(previous, now) {
+  const lastAt = previous?.at[previous.at.length - 1];
+  if (lastAt === undefined || now - lastAt <= POLLER_STOPPED_SECONDS) return [];
+  const missedCount = Math.min(HISTORY_SAMPLES, Math.floor((now - lastAt) / SECONDS_PER_SAMPLE) - 1);
+  return Array.from({ length: missedCount }, (_, index) => now - (missedCount - index) * SECONDS_PER_SAMPLE);
+}
+
+/**
+ * @param {(number | null)[] | undefined} series
+ * @param {number} gapCount
+ * @returns {(number | null)[]}
+ */
+const withGaps = (series, gapCount) => [...(series ?? []), ...Array(gapCount).fill(null)];
 
 /** @param {HostSnapshot} host @param {HostSeries | undefined} previous @param {number} now @returns {HostSeries} */
 function nextSeries(host, previous, now) {
+  const missedTimes = missedSampleTimes(previous, now);
+  const gapCount = missedTimes.length;
   return {
-    at: appendLimited(previous?.at, now, HISTORY_SAMPLES),
-    cpu: appendReading(previous?.cpu, host, host.cpu_pct),
-    mem: appendReading(previous?.mem, host, host.mem_pct),
-    rx: appendReading(previous?.rx, host, host.net_rx_rate),
-    tx: appendReading(previous?.tx, host, host.net_tx_rate),
+    at: appendLimited([...(previous?.at ?? []), ...missedTimes], now, HISTORY_SAMPLES),
+    cpu: appendReading(withGaps(previous?.cpu, gapCount), host, host.cpu_pct),
+    mem: appendReading(withGaps(previous?.mem, gapCount), host, host.mem_pct),
+    rx: appendReading(withGaps(previous?.rx, gapCount), host, host.net_rx_rate),
+    tx: appendReading(withGaps(previous?.tx, gapCount), host, host.net_tx_rate),
   };
 }
 

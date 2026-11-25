@@ -135,7 +135,8 @@ The first poll creates `~/.config/herdwatch/settings.conf` with every key commen
 | `ALERTS` | `on` | A Herdr notification and sound when a host stays at or above `CRIT` |
 | `ALERT_POLLS` | `3` | Polls in a row at `CRIT` before an alert |
 | `TOP_N` | `30` | Processes per host |
-| `SSH_TIMEOUT` | `3` | Seconds before a poll of one host stops; keep it below 5 |
+| `SSH_TIMEOUT` | `3` | Seconds to open the SSH connection to a host |
+| `PROBE_TIMEOUT` | `10` | Seconds for the full poll of one host; keep it below 20 |
 | `STALE_SECONDS` | `30` | Age after which values show `?` |
 | `PANE_REFRESH` | `2` | Seconds between checks of the console clock; the console redraws only when a time on screen changes |
 | `WORKTREE_ROOTS` | `~` | Folders to search on each host, separated by spaces, at most 8 |

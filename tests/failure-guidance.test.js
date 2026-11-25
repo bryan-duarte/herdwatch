@@ -4,8 +4,8 @@ import { BACKEND_GUIDANCE, FAILURE_GUIDANCE, HOST_PROBLEM_GUIDANCE, configProble
 import { SETTINGS, hostSnapshot } from "./support/snapshots.js";
 
 const FAILURE_REASONS = ["timeout", "hostkey", "tailscale_check", "login", "dns", "refused", "unreachable", "ssh_config", "remote_shell",
-  "probe_format", "parse_failed", "unknown"];
-const HOST_PROBLEM_REASONS = ["missing_tools", "unsupported_os", "ports_hidden"];
+  "probe_format", "probe_slow", "parse_failed", "unknown"];
+const HOST_PROBLEM_REASONS = ["missing_tools", "unsupported_os", "ports_hidden", "probe_slow"];
 const BACKEND_FAILURE_REASONS = ["backend_timeout", "backend_missing", "bad_output", "mod_bug", "runtime_dir"];
 
 test("every reason code has a summary and a next step", () => {
@@ -41,7 +41,14 @@ test("a config problem names the file, the line, the value and what Herdwatch us
 });
 
 test("a host without ss says that its ports are hidden", () => {
-  assert.deepEqual(hostProblemGuidance({ reason: "ports_hidden", detail: "ss" }), { summary: "Ports are hidden: ss is not installed.", nextStep: "Install ss on the host." });
+  assert.deepEqual(hostProblemGuidance({ reason: "ports_hidden", detail: "ss" }, SETTINGS), { summary: "Ports are hidden: ss is not installed.", nextStep: "Install ss on the host." });
+});
+
+test("a slow probe names PROBE_TIMEOUT and its value, not a host that did not answer", () => {
+  assert.equal(hostProblemGuidance({ reason: "probe_slow", detail: "" }, SETTINGS).summary,
+    "The last poll took more than PROBE_TIMEOUT (10 s), so the values are from the last full poll.");
+  assert.equal(hostFailureGuidance(hostSnapshot({ state: "down", reason: "probe_slow" }), SETTINGS).summary,
+    "devbox answered, but the poll took more than PROBE_TIMEOUT (10 s).");
 });
 
 test("a measure that misses a root names the setting to fix", () => {
