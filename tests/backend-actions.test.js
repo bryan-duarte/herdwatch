@@ -14,7 +14,8 @@ const WATCHDOG_EXIT_CODE = 124;
 
 /**
  * A stand-in for ssh: it runs the remote command on this machine, so the fixed remote scripts run for real.
- * The target "deadhost" fails the way a name that does not resolve fails; "slowhost" never answers.
+ * The target "deadhost" fails the way a name that does not resolve fails; "slowhost" never answers;
+ * "slowprobe" answers with the format line of the probe, then stops answering.
  */
 const FAKE_SSH = `#!/bin/bash
 while [ $# -gt 0 ]; do
@@ -31,6 +32,7 @@ target="$1"; shift
 case "$target" in
   deadhost) echo "ssh: Could not resolve hostname deadhost: nodename nor servname provided, or not known" >&2; exit 255 ;;
   slowhost) sleep 30 ;;
+  slowprobe) echo "probe=3"; sleep 30 ;;
   checkhost) printf '%s\n' "# Tailscale SSH requires an additional check." "# To authenticate, visit: https://login.tailscale.com/a/x" >&2; sleep 30 ;;
 esac
 exec sh -c "$*"
@@ -107,7 +109,7 @@ test("a host that does not answer in time fails with the watchdog code", () => {
 });
 
 test("a Tailscale check that waits for the browser past the timeout shows as the check, not a timeout", () => {
-  const sandbox = backendSandbox({ hosts: "kali checkhost\n", settings: "SSH_TIMEOUT=1\n" });
+  const sandbox = backendSandbox({ hosts: "kali checkhost\n", settings: "SSH_TIMEOUT=1\nPROBE_TIMEOUT=1\n" });
   const [kali] = JSON.parse(sandbox.run("snapshot").stdout).hosts;
   assert.equal(kali.state, "auth");
   assert.equal(kali.reason, "tailscale_check");
@@ -121,7 +123,7 @@ test("a snapshot names config problems, the reason a host is down, and a pinned 
     pins: "local 1\nnope 22\nlocal 99999\n",
   });
   const first = JSON.parse(sandbox.run("snapshot").stdout);
-  assert.equal(first.version, 3);
+  assert.equal(first.version, 4);
   assert.deepEqual(first.problems.map((problem) => `${problem.file}:${problem.line}:${problem.reason}`), [
     "settings.conf:1:not_a_positive_integer",
     "settings.conf:2:unknown_key",
@@ -137,6 +139,46 @@ test("a snapshot names config problems, the reason a host is down, and a pinned 
   const second = JSON.parse(sandbox.run("snapshot").stdout);
   assert.deepEqual(second.alerts, [], "a port that stays down alerts once");
   assert.equal(second.hosts[1].down_since, dead.down_since, "down_since keeps the first failure");
+});
+
+/** Writes the record of a host that answered at the time 100, so the next failures start from a host that is up. */
+function writeUpRecord(sandbox, label, target) {
+  mkdirSync(join(sandbox.paths.state, "hosts"), { recursive: true });
+  writeFileSync(join(sandbox.paths.state, "hosts", `${label}.rec`), `label=${label}\ntarget=${target}\nstate=ok\npolled_at=100\nupdated_at=100\ncpu_pct=42\n`);
+}
+
+test("a host that was up shows as down only after three failed polls in a row", () => {
+  const sandbox = backendSandbox({ hosts: "dead deadhost\n" });
+  writeUpRecord(sandbox, "dead", "deadhost");
+  const deadHostAfterPoll = () => JSON.parse(sandbox.run("snapshot").stdout).hosts[0];
+  const first = deadHostAfterPoll();
+  assert.equal(first.state, "ok", "one failed poll changes nothing on screen");
+  assert.equal(first.cpu_pct, 42);
+  assert.equal(first.updated_at, 100, "the values keep the time of the last good poll");
+  assert.equal(deadHostAfterPoll().state, "ok");
+  const third = deadHostAfterPoll();
+  assert.equal(third.state, "down");
+  assert.equal(third.reason, "dns");
+  assert.equal(third.down_since, first.polled_at, "down_since is the time of the first failed poll");
+});
+
+test("a host that answers but is slower than PROBE_TIMEOUT is not down: it keeps its values and gets a note", () => {
+  const sandbox = backendSandbox({ hosts: "busy slowprobe\n", settings: "PROBE_TIMEOUT=1\n" });
+  writeUpRecord(sandbox, "busy", "slowprobe");
+  for (let poll = 0; poll < 4; poll += 1) {
+    const busy = JSON.parse(sandbox.run("snapshot").stdout).hosts[0];
+    assert.equal(busy.state, "ok", `poll ${poll + 1}`);
+    assert.equal(busy.reason, "probe_slow");
+    assert.equal(busy.cpu_pct, 42);
+    assert.deepEqual(busy.problems, [{ reason: "probe_slow", detail: "" }]);
+  }
+});
+
+test("a slow host without values yet shows the slow probe as its reason", () => {
+  const sandbox = backendSandbox({ hosts: "busy slowprobe\n", settings: "PROBE_TIMEOUT=1\n" });
+  const busy = JSON.parse(sandbox.run("snapshot").stdout).hosts[0];
+  assert.equal(busy.state, "down");
+  assert.equal(busy.reason, "probe_slow");
 });
 
 test("an action without a known name prints the usage", () => {

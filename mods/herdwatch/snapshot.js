@@ -5,12 +5,12 @@
 /** @typedef {import("./schemas.js").Snapshot} Snapshot */
 /** @typedef {import("./schemas.js").SnapshotResult} SnapshotResult */
 
-export const SNAPSHOT_FORMAT_VERSION = 3;
+export const SNAPSHOT_FORMAT_VERSION = 4;
 const HOST_STATES = new Set(["ok", "down", "auth", "pending"]);
 const MEASURE_STATES = new Set(["ok", "failed", "pending"]);
 const DOCKER_STATES = new Set(["ok", "failed", "pending", "missing", "denied", "off"]);
 const BACKEND_FAILURE_REASONS = new Set(["backend_timeout", "backend_missing", "bad_output", "mod_bug", "runtime_dir"]);
-const SETTING_KEYS = ["warn", "crit", "top_n", "ssh_timeout", "pane_refresh", "stale_seconds", "worktree_interval", "worktree_timeout", "docker_interval"];
+const SETTING_KEYS = ["warn", "crit", "top_n", "ssh_timeout", "probe_timeout", "pane_refresh", "stale_seconds", "worktree_interval", "worktree_timeout", "docker_interval"];
 const HOST_LISTS = ["processes", "agents", "ports", "cores", "problems"];
 const DOCKER_LISTS = ["containers", "images", "volumes"];
 const SNAPSHOT_LISTS = ["hosts", "alerts", "problems"];

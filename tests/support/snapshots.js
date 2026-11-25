@@ -3,6 +3,7 @@ export const SETTINGS = {
   crit: 90,
   top_n: 30,
   ssh_timeout: 3,
+  probe_timeout: 10,
   pane_refresh: 2,
   stale_seconds: 30,
   worktree_interval: 300,
@@ -105,7 +106,7 @@ export function hostSnapshot(overrides = {}) {
 
 export function snapshot(overrides = {}) {
   return {
-    version: 3,
+    version: 4,
     generated_at: 1000,
     hosts_file: "/home/dev/.config/herdwatch/hosts.conf",
     settings_file: "/home/dev/.config/herdwatch/settings.conf",

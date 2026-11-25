@@ -30,6 +30,7 @@ const SETTING_FIELDS = {
   CRIT: "crit",
   TOP_N: "top_n",
   SSH_TIMEOUT: "ssh_timeout",
+  PROBE_TIMEOUT: "probe_timeout",
   PANE_REFRESH: "pane_refresh",
   STALE_SECONDS: "stale_seconds",
   WORKTREE_INTERVAL: "worktree_interval",
@@ -77,6 +78,10 @@ export const FAILURE_GUIDANCE = {
     summary: `${label} answered, but its login shell cannot run sh.`,
     nextStep: "Give the SSH user a normal login shell.",
   }),
+  probe_slow: ({ label, settings }) => ({
+    summary: `${label} answered, but the poll took more than PROBE_TIMEOUT (${settings.probe_timeout} s).`,
+    nextStep: "Raise PROBE_TIMEOUT in settings.conf, or lower TOP_N.",
+  }),
   probe_format: ({ label }) => ({
     summary: `${label} answered with text that is not Herdwatch data.`,
     nextStep: "Remove the lines that print text from the login files of the SSH user (.bashrc, .profile).",
@@ -91,18 +96,22 @@ export const FAILURE_GUIDANCE = {
   }),
 };
 
-/** @type {Record<HostProblemReason, (problem: HostProblem) => Guidance>} */
+/** @type {Record<HostProblemReason, (problem: HostProblem, settings: MonitorSettings) => Guidance>} */
 export const HOST_PROBLEM_GUIDANCE = {
   ports_hidden: ({ detail }) => ({ summary: `Ports are hidden: ${detail} is not installed.`, nextStep: `Install ${detail} on the host.` }),
   missing_tools: ({ detail }) => ({ summary: `Some data is missing: ${detail} is not installed.`, nextStep: `Install ${detail} on the host.` }),
   unsupported_os: () => ({ summary: "Herdwatch does not know the OS of this host.", nextStep: "Herdwatch reads Linux and macOS hosts." }),
+  probe_slow: (_problem, settings) => ({
+    summary: `The last poll took more than PROBE_TIMEOUT (${settings.probe_timeout} s), so the values are from the last full poll.`,
+    nextStep: "Raise PROBE_TIMEOUT in settings.conf, or lower TOP_N.",
+  }),
 };
 
 /** @type {Record<BackendFailureReason, () => Guidance>} */
 export const BACKEND_GUIDANCE = {
   backend_timeout: () => ({
     summary: `The poll took longer than ${SNAPSHOT_TIMEOUT_MS / MILLISECONDS_PER_SECOND} s.`,
-    nextStep: "Lower SSH_TIMEOUT in settings.conf, or remove slow hosts from hosts.conf.",
+    nextStep: "Lower PROBE_TIMEOUT in settings.conf, or remove slow hosts from hosts.conf.",
   }),
   backend_missing: () => ({
     summary: "The Herdwatch backend is missing.",
@@ -153,8 +162,8 @@ export function hostFailureGuidance(host, settings) {
   return FAILURE_GUIDANCE[reason](hostContext(host, settings));
 }
 
-/** @param {HostProblem} problem @returns {Guidance} */
-export const hostProblemGuidance = (problem) => HOST_PROBLEM_GUIDANCE[problem.reason](problem);
+/** @param {HostProblem} problem @param {MonitorSettings} settings @returns {Guidance} */
+export const hostProblemGuidance = (problem, settings) => HOST_PROBLEM_GUIDANCE[problem.reason](problem, settings);
 
 /** @param {BackendFailure} failure @returns {Guidance} */
 export const backendGuidance = (failure) => BACKEND_GUIDANCE[failure.reason]();

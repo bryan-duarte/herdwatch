@@ -10,33 +10,70 @@ herdwatch_assemble_probe() {
   done >"$probe_file"
 }
 
+# A host must fail this many polls in a row before it shows as down, so one slow or lost poll changes nothing on screen.
+HOST_DOWN_POLLS=3
+
+# Polls in a row that did not answer. A record from before this count existed and that shows down counts as down.
+herdwatch_previous_failed_polls() {
+  local record_file="$1" previous_failed_polls
+  previous_failed_polls=$(herdwatch_record_value "$record_file" failed_polls)
+  if herdwatch_is_whole_number "$previous_failed_polls"; then
+    echo "$previous_failed_polls"
+    return
+  fi
+  case "$(herdwatch_record_value "$record_file" state)" in
+    down | auth) echo "$HOST_DOWN_POLLS" ;;
+    *) echo 0 ;;
+  esac
+}
+
 # A host keeps the time of its first failure until a poll succeeds again.
 herdwatch_previous_down_since() {
-  local record_file="$1" polled_at="$2" previous_state previous_down_since was_already_down=false
-  previous_state=$(herdwatch_record_value "$record_file" state)
+  local record_file="$1" polled_at="$2" previous_failed_polls="$3" previous_down_since
   previous_down_since=$(herdwatch_record_value "$record_file" down_since)
-  case "$previous_state" in down | auth) was_already_down=true ;; esac
-  if [ "$was_already_down" = true ] && herdwatch_is_whole_number "$previous_down_since"; then
+  if [ "$previous_failed_polls" -gt 0 ] && herdwatch_is_whole_number "$previous_down_since"; then
     echo "$previous_down_since"
   else
     echo "$polled_at"
   fi
 }
 
+# The state that the console shows. A host that answered too slowly is not down: it keeps its last values, which go stale.
+# A host that was up stays up for its first HOST_DOWN_POLLS - 1 failed polls.
+herdwatch_shown_state() {
+  local record_file="$1" failure_state="$2" reason="$3" failed_polls="$4" previous_state has_values=false
+  previous_state=$(herdwatch_record_value "$record_file" state)
+  herdwatch_is_whole_number "$(herdwatch_record_value "$record_file" updated_at)" && has_values=true
+  if [ "$reason" = probe_slow ] && [ "$has_values" = true ]; then
+    echo ok
+  elif [ "$failure_state" = down ] && [ "$previous_state" = ok ] && [ "$failed_polls" -lt "$HOST_DOWN_POLLS" ]; then
+    echo ok
+  else
+    echo "$failure_state"
+  fi
+}
+
 herdwatch_mark_failed() {
   local label="$1" target="$2" polled_at="$3" failure_state="$4" reason="$5" detail="$6"
-  local record_file down_since
+  local record_file failed_polls down_since="" shown_state
   record_file=$(herdwatch_record_file "$label")
-  down_since=$(herdwatch_previous_down_since "$record_file" "$polled_at")
+  failed_polls=$(herdwatch_previous_failed_polls "$record_file")
+  if [ "$reason" = probe_slow ]; then
+    failed_polls=0
+  else
+    down_since=$(herdwatch_previous_down_since "$record_file" "$polled_at" "$failed_polls")
+    failed_polls=$((failed_polls + 1))
+  fi
+  shown_state=$(herdwatch_shown_state "$record_file" "$failure_state" "$reason" "$failed_polls")
   {
-    printf 'label=%s\ntarget=%s\nstate=%s\npolled_at=%s\nreason=%s\ndetail=%s\ndown_since=%s\n' \
-      "$label" "$target" "$failure_state" "$polled_at" "$reason" "$detail" "$down_since"
+    printf 'label=%s\ntarget=%s\nstate=%s\npolled_at=%s\nreason=%s\ndetail=%s\ndown_since=%s\nfailed_polls=%s\n' \
+      "$label" "$target" "$shown_state" "$polled_at" "$reason" "$detail" "$down_since" "$failed_polls"
     if [ -r "$record_file" ]; then
-      grep -Ev '^(label|target|state|polled_at|reason|detail|error|down_since)=' "$record_file"
+      grep -Ev '^(label|target|state|polled_at|reason|detail|error|down_since|failed_polls)=' "$record_file"
     fi
   } >"$record_file.$$.tmp"
   mv "$record_file.$$.tmp" "$record_file"
-  herdwatch_log host_poll_failed "label=$label state=$failure_state reason=$reason detail=$detail"
+  herdwatch_log host_poll_failed "label=$label state=$failure_state reason=$reason detail=$detail failed_polls=$failed_polls"
 }
 
 herdwatch_store_record() {
@@ -59,7 +96,7 @@ herdwatch_poll_host() {
   local label="${HOST_LABELS[$1]}" target="${HOST_TARGETS[$1]}" probe_file="$2"
   local probe_output="$RUNTIME_DIR/$label.$$.raw" stderr_file="$RUNTIME_DIR/$label.$$.err"
   local polled_at exit_code=0 probe_succeeded=false failure_state reason rtt_ms
-  herdwatch_run_remote_script "$target" "$probe_file" "sh -s -- $TOP_N" "$SSH_TIMEOUT" "$probe_output" "$stderr_file" || exit_code=$?
+  herdwatch_run_remote_script "$target" "$probe_file" "sh -s -- $TOP_N" "$PROBE_TIMEOUT" "$probe_output" "$stderr_file" || exit_code=$?
   [ "$exit_code" = 0 ] && grep -qx "$HERDWATCH_PROBE_FORMAT_LINE" "$probe_output" && probe_succeeded=true
   polled_at=$(date +%s)
   if [ "$probe_succeeded" = true ]; then
@@ -69,6 +106,8 @@ herdwatch_poll_host() {
     herdwatch_ensure_master "$label" "$target"
   else
     read -r failure_state reason <<<"$(herdwatch_failure_reason "$stderr_file" "$exit_code" "$probe_output")"
+    # The probe prints its format line first, so a timeout after that line means that the host answered, but slowly.
+    [ "$reason" = timeout ] && grep -qx "$HERDWATCH_PROBE_FORMAT_LINE" "$probe_output" && reason=probe_slow
     herdwatch_mark_failed "$label" "$target" "$polled_at" "$failure_state" "$reason" "$(herdwatch_failure_detail "$stderr_file")"
   fi
   rm -f "$probe_output" "$stderr_file"

@@ -156,7 +156,8 @@ function is_port_tool(tool) {
 }
 
 function host_problems_json(   tools, tool_count, position, other_tools, problems_list) {
-  if (record["os"] == "unsupported") problems_list = problem_json("unsupported_os", "")
+  if (record_state() == "ok" && record["reason"] == "probe_slow") problems_list = problem_json("probe_slow", "")
+  if (record["os"] == "unsupported") problems_list = joined(problems_list, problem_json("unsupported_os", ""), ",")
   tool_count = split(record["missing_tools"], tools, " ")
   for (position = 1; position <= tool_count; position++) {
     if (is_port_tool(tools[position])) problems_list = joined(problems_list, problem_json("ports_hidden", tools[position]), ",")
